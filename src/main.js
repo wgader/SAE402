@@ -103,7 +103,7 @@ window.addEventListener('load', () => {
 
             const cup = document.createElement('a-entity');
             cup.setAttribute('gltf-model', 'url(models/Coffeecup.glb)');
-            cup.setAttribute('scale', '0.08 0.08 0.08');
+            cup.setAttribute('scale', '0.12 0.12 0.12'); // Bigger cup as requested
             cup.setAttribute('position', `${cupPos.x} ${cupPos.y} ${cupPos.z}`);
             cup.setAttribute('dynamic-body', 'mass:0.3;linearDamping:0.5;angularDamping:0.5');
             cup.setAttribute('class', 'clickable grabbable');
@@ -112,6 +112,20 @@ window.addEventListener('load', () => {
 
             // Marquer comme objet café pour le grab
             cup.dataset.isCoffee = 'true';
+
+            // COLLISION LISTENER ON CUP (More reliable for dynamic bodies)
+            cup.addEventListener('collide', (e) => {
+                const collidedEl = e.detail.body.el;
+                if (!collidedEl) return;
+
+                // Check if we hit a customer
+                if (collidedEl.classList.contains('customer')) {
+                    console.log('☕ CUP HIT CUSTOMER!');
+                    if (typeof deliverCoffee === 'function') {
+                        deliverCoffee(collidedEl, cup);
+                    }
+                }
+            });
 
             sceneEl.appendChild(cup);
             spawnedObjects.push(cup);
@@ -599,59 +613,59 @@ window.addEventListener('load', () => {
 
                     sceneEl.renderer.xr.setSession(xrSession);
 
-                // Controllers Three.js
-                const ctrl0 = sceneEl.renderer.xr.getController(0);
-                const ctrl1 = sceneEl.renderer.xr.getController(1);
+                    // Controllers Three.js
+                    const ctrl0 = sceneEl.renderer.xr.getController(0);
+                    const ctrl1 = sceneEl.renderer.xr.getController(1);
 
-                // Identify Handedness
-                ctrl0.addEventListener('connected', (e) => {
-                    const handedness = e.data.handedness;
-                    if (handedness === 'right') window.rightController = ctrl0;
-                    if (handedness === 'left') window.leftController = ctrl0; // Capture Left
-                });
-                ctrl1.addEventListener('connected', (e) => {
-                    const handedness = e.data.handedness;
-                    if (handedness === 'right') window.rightController = ctrl1;
-                    if (handedness === 'left') window.leftController = ctrl1; // Capture Left
-                });
+                    // Identify Handedness
+                    ctrl0.addEventListener('connected', (e) => {
+                        const handedness = e.data.handedness;
+                        if (handedness === 'right') window.rightController = ctrl0;
+                        if (handedness === 'left') window.leftController = ctrl0; // Capture Left
+                    });
+                    ctrl1.addEventListener('connected', (e) => {
+                        const handedness = e.data.handedness;
+                        if (handedness === 'right') window.rightController = ctrl1;
+                        if (handedness === 'left') window.leftController = ctrl1; // Capture Left
+                    });
 
-                sceneEl.object3D.add(ctrl0);
-                sceneEl.object3D.add(ctrl1);
+                    sceneEl.object3D.add(ctrl0);
+                    sceneEl.object3D.add(ctrl1);
 
-                ctrl0.addEventListener('selectstart', () => grab(ctrl0));
-                ctrl0.addEventListener('selectend', release);
-                ctrl1.addEventListener('selectstart', () => grab(ctrl1));
-                ctrl1.addEventListener('selectend', release);
+                    ctrl0.addEventListener('selectstart', () => grab(ctrl0));
+                    ctrl0.addEventListener('selectend', release);
+                    ctrl1.addEventListener('selectstart', () => grab(ctrl1));
+                    ctrl1.addEventListener('selectend', release);
 
-                // CREATE WELCOME PANEL FIRST
-                createWelcomePanel();
+                    // CREATE WELCOME PANEL FIRST
+                    createWelcomePanel();
 
-                // CREATE HUD MENU (but hidden)
-                createHUDInventory();
+                    // CREATE HUD MENU (but hidden)
+                    createHUDInventory();
 
-                if (debugEl) debugEl.textContent = 'AR OK! Read the instructions';
+                    if (debugEl) debugEl.textContent = 'AR OK! Read the instructions';
 
-                // Setup hit-test après délai
-                setTimeout(async () => {
-                    try {
-                        xrRefSpace = sceneEl.renderer.xr.getReferenceSpace();
-                        const viewer = await xrSession.requestReferenceSpace('viewer');
-                        hitTestSource = await xrSession.requestHitTestSource({ space: viewer });
-                        if (debugEl) debugEl.textContent = 'Hit-test OK!';
-                    } catch (e) {
-                        if (debugEl) debugEl.textContent = 'Pas de hit-test';
-                    }
+                    // Setup hit-test après délai
+                    setTimeout(async () => {
+                        try {
+                            xrRefSpace = sceneEl.renderer.xr.getReferenceSpace();
+                            const viewer = await xrSession.requestReferenceSpace('viewer');
+                            hitTestSource = await xrSession.requestHitTestSource({ space: viewer });
+                            if (debugEl) debugEl.textContent = 'Hit-test OK!';
+                        } catch (e) {
+                            if (debugEl) debugEl.textContent = 'Pas de hit-test';
+                        }
 
-                    // Démarrer boucle XR
-                    xrSession.requestAnimationFrame(xrLoop);
-                }, 500);
+                        // Démarrer boucle XR
+                        xrSession.requestAnimationFrame(xrLoop);
+                    }, 500);
 
-            } catch (e) {
-                if (debugEl) debugEl.textContent = 'Erreur: ' + e.message;
-                console.error('Erreur AR:', e.message);
-                // Show scene anyway on error
-                if (sceneEl) sceneEl.style.display = 'block';
-            }
+                } catch (e) {
+                    if (debugEl) debugEl.textContent = 'Erreur: ' + e.message;
+                    console.error('Erreur AR:', e.message);
+                    // Show scene anyway on error
+                    if (sceneEl) sceneEl.style.display = 'block';
+                }
             }, 2500); // Loader delay (2.5 seconds)
         };
 
@@ -787,16 +801,16 @@ window.addEventListener('load', () => {
 
                         if (aBtn && aBtn.pressed && !giveCoffeeLock) {
                             debugEl.textContent = `A pressed! Grab:${grabbed}`;
-                            
+
                             // Si on tient un café, le donner au client
                             if (grabbed && currentGrabbedEl) {
-                                const isCoffee = 
+                                const isCoffee =
                                     (currentGrabbedEl.classList && currentGrabbedEl.classList.contains('coffee-cup')) ||
                                     (currentGrabbedEl.dataset && currentGrabbedEl.dataset.isCoffee === 'true') ||
                                     (currentGrabbedEl.id && currentGrabbedEl.id.includes('coffee-cup'));
-                                
+
                                 debugEl.textContent = `Coffee:${isCoffee} Cust:${customers.length}`;
-                                
+
                                 if (isCoffee && customers.length > 0) {
                                     giveCoffeeLock = true;
                                     console.log('✅ COFFEE GIVEN BY BUTTON A!');
@@ -1274,13 +1288,25 @@ window.addEventListener('load', () => {
             // Limite à 1 client pour le test
             if (customers.length > 0) return;
 
-            debugEl.textContent = '🧍 NEW CUSTOMER';
+            console.log('Attempting to spawn customer...');
+            if (debugEl) debugEl.textContent = '🧍 NEW CUSTOMER ARRIVING...';
 
-            // Modèle 3D du client (Punk)
+            // Random Model
+            const models = ['models/Punk.glb', 'models/Punk.glb'];
+            const randomModel = models[Math.floor(Math.random() * models.length)];
+
+            // Modèle 3D du client
             const customer = document.createElement('a-entity');
-            customer.setAttribute('gltf-model', 'url(models/Punk.glb)');
+            customer.setAttribute('gltf-model', `url(${randomModel})`);
             customer.setAttribute('position', `${QUEUE_POS.x} 0 ${QUEUE_POS.z}`); // y=0 car le modèle est sur le sol
-            customer.setAttribute('scale', '1 1 1'); // Ajuster selon la taille du modèle
+
+            // Scale adjustment based on model
+            if (randomModel.includes('Grandpa')) {
+                customer.setAttribute('scale', '0.011 0.011 0.011'); // Grandpa might be different scale
+            } else {
+                customer.setAttribute('scale', '1 1 1'); // Punk is standard
+            }
+
             customer.setAttribute('rotation', '0 0 0'); // Face à l'utilisateur
             customer.classList.add('customer');
             customer.id = `customer-${Date.now()}`;
@@ -1295,10 +1321,28 @@ window.addEventListener('load', () => {
             text.setAttribute('font', 'mozillavr');
             customer.appendChild(text);
 
+            // Green Circle (Zone)
+            const circle = document.createElement('a-ring');
+            circle.setAttribute('radius-inner', '0.4');
+            circle.setAttribute('radius-outer', '0.5');
+            circle.setAttribute('color', '#00ff00');
+            circle.setAttribute('rotation', '-90 0 0'); // Flat on ground
+            circle.setAttribute('position', '0 0.02 0'); // Slightly up
+            customer.appendChild(circle);
+
+            // PHYSICS BODY (Static) to allow Cup collision
+            customer.setAttribute('static-body', 'shape: hull');
+
             sceneEl.appendChild(customer);
             customers.push(customer);
 
+            console.log(`Customer spawned: ${randomModel}`);
             showARNotification('☕ New Customer!', 2000);
+
+            // Update debug text
+            setTimeout(() => {
+                if (debugEl) debugEl.textContent = 'Customer Waiting!';
+            }, 1000);
         }
 
         function removeCustomer(customer) {
@@ -1306,82 +1350,52 @@ window.addEventListener('load', () => {
             const idx = customers.indexOf(customer);
             if (idx > -1) customers.splice(idx, 1);
 
+            // Force visibility off immediately
+            customer.setAttribute('visible', 'false');
+
+            // Remove physics if any
+            if (customer.body && customer.body.world) {
+                customer.body.world.removeBody(customer.body);
+            }
+
             if (customer.parentNode) {
                 customer.parentNode.removeChild(customer);
             }
             console.log('Client despawned via removeCustomer');
+
+            // Loop: Spawn new customer after delay
+            if (debugEl) debugEl.textContent = 'Customer left. Next in 4s...';
+            setTimeout(spawnCustomer, 4000);
         }
 
-        // Rayon de détection pour la livraison de café (plus large pour faciliter)
-        const CUSTOMER_RADIUS = 1.2;
-        let lastCoffeeDebug = 0;
-        let coffeeDelivered = false; // Flag pour éviter les doubles détections
+        // --- BACKUP SPAWN TRIGGER (For Refresh Issues) ---
+        // If no customer exists 10 seconds after load (and AR started), force spawn one.
+        setTimeout(() => {
+            if (customers.length === 0 && sceneEl && sceneEl.style.display !== 'none') {
+                console.warn('⚠️ Backup Spawn Triggered!');
+                if (debugEl) debugEl.textContent = '⚠️ Auto-Spawning Backup Customer';
+                spawnCustomer();
+            }
+        }, 10000);
+
+        // --- DELIVERY LOGIC (Extracted) ---
+        function deliverCoffee(customer, cupEl) {
+            if (customer._delivered) return; // Prevent double trigger
+            customer._delivered = true;
+
+            console.log('✅ DELIVERY SUCCESS!');
+            showARNotification('✅ THANKS! Perfect coffee!', 3000);
+            if (debugEl) debugEl.textContent = '✅ Café livré (Collision)!';
+
+            // Remove Cup
+            if (cupEl.parentNode) cupEl.parentNode.removeChild(cupEl);
+
+            // Remove Customer
+            removeCustomer(customer);
+        }
 
         function checkCoffeeDelivery() {
-            if (coffeeDelivered) return; // Éviter les appels multiples
-            if (customers.length === 0) return;
-            if (spawnedObjects.length === 0) return;
-
-            const customer = customers[0]; // Premier client seulement
-            if (!customer || !customer.object3D) return;
-
-            const custPos = new THREE.Vector3();
-            customer.object3D.getWorldPosition(custPos);
-
-            // Chercher les tasses directement avec une boucle simple
-            for (let i = spawnedObjects.length - 1; i >= 0; i--) {
-                const obj = spawnedObjects[i];
-                if (!obj) continue;
-
-                // Vérifier si c'est un café
-                const isCoffee = 
-                    (obj.classList && obj.classList.contains('coffee-cup')) ||
-                    (obj.dataset && obj.dataset.isCoffee === 'true') ||
-                    (obj.id && obj.id.includes('coffee-cup'));
-
-                if (!isCoffee) continue;
-                if (!obj.object3D) continue;
-
-                const cupPos = new THREE.Vector3();
-                obj.object3D.getWorldPosition(cupPos);
-
-                // Distance horizontale
-                const distHoriz = Math.sqrt(
-                    Math.pow(custPos.x - cupPos.x, 2) + 
-                    Math.pow(custPos.z - cupPos.z, 2)
-                );
-
-                // Debug throttled
-                const now = Date.now();
-                if (now - lastCoffeeDebug > 1000) {
-                    lastCoffeeDebug = now;
-                    debugEl.textContent = `☕ D:${distHoriz.toFixed(1)}m (need <${CUSTOMER_RADIUS})`;
-                }
-
-                // LIVRAISON!
-                if (distHoriz < CUSTOMER_RADIUS) {
-                    coffeeDelivered = true; // Bloquer les appels suivants
-                    
-                    console.log('✅ COFFEE DELIVERED!');
-                    showARNotification('✅ THANKS! Perfect coffee!', 3000);
-                    debugEl.textContent = '✅ Café livré!';
-
-                    // Supprimer la tasse
-                    spawnedObjects.splice(i, 1);
-                    if (obj.body && obj.body.world) {
-                        obj.body.world.removeBody(obj.body);
-                    }
-                    if (obj.parentNode) obj.parentNode.removeChild(obj);
-
-                    // Supprimer le client
-                    removeCustomer(customer);
-
-                    // Reset flag après 1 seconde
-                    setTimeout(() => { coffeeDelivered = false; }, 1000);
-                    
-                    return; // Sortir immédiatement
-                }
-            }
+            // Deprecated: Logic moved to 'collide' event inside spawnCustomer
         }
 
     }, 100);
