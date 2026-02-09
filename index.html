@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="src/style.css">
+  <title>SAE 402</title>
+</head>
+
+<body>
+  <div id="landing-page" class="landing-container">
+        
+        <nav class="navbar">
+            <div class="nav-links">
+                <!-- <a href="/about.html">About</a> -->
+            </div>
+        </nav>
+
+        <main class="content">
+            <div class="logo-container">
+                <h1 class="logo-text">HOLO<br>BARISTA</h1> 
+            </div>
+
+            <p class="headline">
+                Dive into the world of coffee in XR.<br>
+                Become a legendary master barista.
+            </p>
+
+            <button id="start-btn" class="wood-button">
+                <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-coffee-icon lucide-coffee"><path d="M10 2v2"/><path d="M14 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"/><path d="M6 2v2"/></svg></span> PLAY NOW
+            </button>
+            
+            <p class="vr-hint">Build for XR devices</p>
+        </main>
+
+        <footer class="footer">
+            <div class="socials">
+                <span><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-instagram-icon lucide-instagram"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg></span>
+                <span><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-twitter-icon lucide-twitter"><path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"/></svg></span>
+                <span><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-youtube-icon lucide-youtube"><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17"/><path d="m10 15 5-3-5-3z"/></svg></span>
+            </div>
+            <p>&copy;2026 JWM MMI Games</p>
+        </footer>
+    </div>
+
+    <div id="game-container" class="hidden">
+        <div class="loader">
+            <h2>Brewing your coffee...</h2>
+            <div class="spinner"></div>
+            </div>
+    </div>
+
+  <!-- OVERLAY UI for XR mode (kept for domOverlay requirement, content hidden) -->
+  <div id="overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1000;">
+    <!-- Debug elements removed for production -->
+  </div>
+
+  <a-scene id="scene" physics="debug:false;gravity:-9.8" vr-mode-ui="enabled:false" renderer="alpha:true;antialias:true"
+    background="color:transparent">
+
+    <a-light type="ambient" intensity="0.6"></a-light>
+    <a-light type="directional" position="1 2 1" intensity="0.8"></a-light>
+
+    <a-entity id="rig">
+      <a-camera id="cam" position="0 1.6 0"></a-camera>
+
+      <!-- CONTROLLERS A-FRAME (Supprimés pour éviter conflits, gérés manuellement dans main.js) -->
+    </a-entity>
+
+    <!-- CUBE -->
+    <a-box id="cube" position="0 0.5 -0.7" width="0.15" height="0.15" depth="0.15" color="#8A2BE2"
+      dynamic-body="mass:0.5;linearDamping:0.3;angularDamping:0.3"></a-box>
+
+    <!-- Curseur hit-test -->
+    <a-ring id="cursor" position="0 0 -1" rotation="-90 0 0" radius-inner="0.05" radius-outer="0.08" color="#00FF00"
+      visible="false"></a-ring>
+
+    <!-- Sol de base -->
+    <a-plane position="0 0 0" rotation="-90 0 0" width="20" height="20" visible="false" static-body></a-plane>
+
+  </a-scene>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
