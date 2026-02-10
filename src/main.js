@@ -22,9 +22,9 @@ window.addEventListener('load', () => {
             sceneEl.style.display = 'none';
         }
 
-        if (!sceneEl || !cubeEl) {
-            if (debugEl) debugEl.textContent = 'Éléments manquants!';
-            console.error('Éléments manquants!');
+        if (!sceneEl) {
+            if (debugEl) debugEl.textContent = 'Scène manquante!';
+            console.error('Scène manquante!');
             return;
         }
 
@@ -405,7 +405,6 @@ window.addEventListener('load', () => {
             // spawnScale = taille réelle dans la scène 3D
             const items = [
                 // Row 1: Primitives + Basics
-                { type: 'box', color: '#ff7675', label: 'CUBE' },
                 { type: 'gltf', model: 'models/CoffeeMachine.glb', color: '#fab1a0', label: 'COFFEE', menuScale: '0.2 0.2 0.2', spawnScale: '0.4 0.4 0.4' },
                 { type: 'gltf', model: 'models/TrashcanSmall.glb', color: '#a29bfe', label: 'POUBELLE', menuScale: '0.2 0.2 0.2', spawnScale: '0.8 0.8 0.8' },
                 // Row 2 
@@ -1302,7 +1301,7 @@ window.addEventListener('load', () => {
 
             // Scale adjustment based on model
             if (randomModel.includes('Grandpa')) {
-                customer.setAttribute('scale', '0.011 0.011 0.011'); // Grandpa might be different scale
+                customer.setAttribute('scale', '0.011 0.011 0.011');
             } else {
                 customer.setAttribute('scale', '1 1 1'); // Punk is standard
             }
@@ -1313,7 +1312,7 @@ window.addEventListener('load', () => {
 
             // Panneau de commande (Texte)
             const text = document.createElement('a-text');
-            text.setAttribute('value', 'Grab coffee + Press A!');
+            text.setAttribute('value', '1 Coffee please');
             text.setAttribute('align', 'center');
             text.setAttribute('position', '0 2.2 0.3'); // Au dessus de la tête (modèle ~1.8m)
             text.setAttribute('scale', '1 1 1');
@@ -1321,7 +1320,7 @@ window.addEventListener('load', () => {
             text.setAttribute('font', 'mozillavr');
             customer.appendChild(text);
 
-            // Green Circle (Zone)
+            // GREEN CIRCLE (Floor)
             const circle = document.createElement('a-ring');
             circle.setAttribute('radius-inner', '0.4');
             circle.setAttribute('radius-outer', '0.5');
@@ -1334,6 +1333,7 @@ window.addEventListener('load', () => {
             customer.setAttribute('static-body', 'shape: hull');
 
             sceneEl.appendChild(customer);
+            customers.push(customer);
             customers.push(customer);
 
             console.log(`Customer spawned: ${randomModel}`);
@@ -1384,7 +1384,7 @@ window.addEventListener('load', () => {
             customer._delivered = true;
 
             console.log('✅ DELIVERY SUCCESS!');
-            showARNotification('✅ THANKS! Perfect coffee!', 3000);
+            // showARNotification('✅ THANKS! Perfect coffee!', 3000); // REMOVED: Follows head, annoying.
             if (debugEl) debugEl.textContent = '✅ Café livré (Collision)!';
 
             // Remove Cup
@@ -1394,9 +1394,72 @@ window.addEventListener('load', () => {
             removeCustomer(customer);
         }
 
-        function checkCoffeeDelivery() {
-            // Deprecated: Logic moved to 'collide' event inside spawnCustomer
-        }
+        // --- GLOBAL POLLING LOOP FOR ROBUSTNESS ---
+        setInterval(() => {
+            checkTrashcanCollisions();
+            checkCoffeeDelivery(); // Manual distance check
+            checkCleaning();
+        }, 50); // Faster loop (50ms)
 
+        function checkCoffeeDelivery() {
+            if (customers.length === 0) return;
+
+            // Iterate over all customers (usually just 1)
+            for (const customer of customers) {
+                if (!customer.object3D || customer._delivered) continue;
+
+                const custPos = new THREE.Vector3();
+                customer.object3D.getWorldPosition(custPos);
+
+                let closestDist = 999;
+
+                // Check all coffee cups
+                for (let i = spawnedObjects.length - 1; i >= 0; i--) {
+                    const obj = spawnedObjects[i];
+                    if (!obj || !obj.object3D) continue;
+
+                    // Is it a cup?
+                    const isCoffee =
+                        (obj.classList && obj.classList.contains('coffee-cup')) ||
+                        (obj.dataset && obj.dataset.isCoffee === 'true') ||
+                        (obj.id && obj.id.includes('coffee-cup'));
+
+                    if (!isCoffee) continue;
+
+                    const cupPos = new THREE.Vector3();
+                    obj.object3D.getWorldPosition(cupPos);
+
+                    // --- CYLINDRICAL ZONE CHECK ---
+                    // 1. Horizontal Distance (XZ Plane)
+                    const distXZ = Math.sqrt(
+                        Math.pow(custPos.x - cupPos.x, 2) +
+                        Math.pow(custPos.z - cupPos.z, 2)
+                    );
+
+                    if (distXZ < closestDist) closestDist = distXZ;
+
+                    // 2. Vertical Height (Y Plane) relative to customer base
+                    // Assuming customer is at y=0 or ground level.
+                    // Cup should be above ground (0) and below head height (~2m)
+                    const heightDiff = Math.abs(cupPos.y - custPos.y);
+
+                    // LOGIC: Inside Cylinder?
+                    // Radius: 0.6m (Green circle is ~0.5m radius)
+                    // Height: 2.0m
+                    if (distXZ < 0.6 && heightDiff < 2.0) {
+                        console.log(`✅ ZONE ENTRY DETECTED! DistXZ:${distXZ.toFixed(2)} Height:${heightDiff.toFixed(2)}`);
+                        deliverCoffee(customer, obj);
+                        return; // One delivery at a time
+                    }
+                }
+
+                // Show debug distance to nearest cup
+                if (debugEl && closestDist < 10) {
+                    debugEl.textContent = `Dist: ${closestDist.toFixed(2)}m (Need < 0.6)`;
+                    if (closestDist < 0.6) debugEl.style.color = 'lime';
+                    else debugEl.style.color = 'yellow';
+                }
+            }
+        }
     }, 100);
 });

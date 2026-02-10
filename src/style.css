@@ -1,85 +1,84 @@
-
-
-
 @import url('https://fonts.googleapis.com/css2?family=Changa+One:ital@0;1&display=swap');
 
 /* Force transparency everywhere to prevent white screen in AR */
 :root,
 html,
 body {
-  background-color: transparent !important;
-  background: transparent !important;
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  font-family: 'Changa One', cursive;
+    background-color: transparent !important;
+    background: transparent !important;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Changa One', cursive;
 }
 
 /* UI Overlay Container - Positioned on top */
 #info {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  z-index: 1000;
-  /* High Z-index */
-  pointer-events: none;
-  /* CLICK THROUGH to scene */
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 1000;
+    /* High Z-index */
+    pointer-events: none;
+    /* CLICK THROUGH to scene */
 
-  /* Visual style */
-  background: rgba(0, 0, 0, 0.6);
-  color: white;
-  padding: 15px;
-  border-radius: 10px;
-  backdrop-filter: blur(5px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+    /* Visual style */
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 #info h1 {
-  margin: 0 0 10px 0;
-  font-size: 1.2rem;
-  color: #4CC3D9;
+    margin: 0 0 10px 0;
+    font-size: 1.2rem;
+    color: #4CC3D9;
 }
 
 #info p {
-  margin: 5px 0;
-  font-size: 0.9rem;
+    margin: 5px 0;
+    font-size: 0.9rem;
 }
 
 /* Enable pointer events on the button so it can be clicked */
 #enter-ar {
-  pointer-events: auto;
-  display: block;
-  margin-top: 15px;
-  padding: 12px 24px;
-  background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%);
-  border: none;
-  border-radius: 25px;
-  color: white;
-  font-weight: bold;
-  font-size: 1rem;
-  cursor: pointer;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-  transition: transform 0.2s;
+    pointer-events: auto;
+    display: block;
+    margin-top: 15px;
+    padding: 12px 24px;
+    background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%);
+    border: none;
+    border-radius: 25px;
+    color: white;
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s;
 }
 
 #enter-ar:active {
-  transform: scale(0.95);
+    transform: scale(0.95);
 }
 
 /* Hide default vite app container if present */
 #app {
-  display: none !important;
+    display: none !important;
 }
 
 a-scene {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-}/* RESET & BASE */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* RESET & BASE */
 * {
     margin: 0;
     padding: 0;
@@ -88,7 +87,8 @@ a-scene {
 
 body {
     font-family: 'Changa One', cursive;
-    overflow: hidden; /* Empêche le scroll pour l'immersion */
+    overflow: hidden;
+    /* Empêche le scroll pour l'immersion */
     height: 100vh;
     background-color: #333;
 }
@@ -99,7 +99,7 @@ body {
     width: 100%;
     height: 100vh;
     /* Remplace par ton image de fond générée */
-    background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.3)), url('../img/coffee-background.png');
+    background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.3)), url('../img/coffee-background.png');
     background-size: cover;
     background-position: center;
     display: flex;
@@ -112,7 +112,8 @@ body {
 .content {
     text-align: center;
     color: white;
-    margin-top: -50px; /* Remonte un peu le contenu visuellement */
+    margin-top: -50px;
+    /* Remonte un peu le contenu visuellement */
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -123,10 +124,12 @@ body {
     font-family: 'Changa One', cursive;
     font-size: 5rem;
     line-height: 0.9;
-    color: #FFD700; /* Or jaune */
+    color: #FFD700;
+    /* Or jaune */
     text-transform: uppercase;
-    text-shadow: 
-        4px 4px 0px #8B4513, /* Ombre marron bois */
+    text-shadow:
+        4px 4px 0px #8B4513,
+        /* Ombre marron bois */
         8px 8px 0px #3e1e09;
     transform: rotate(-3deg);
     margin-bottom: 10px;
@@ -139,7 +142,7 @@ body {
     font-size: 1.5rem;
     color: #F4A460;
     text-shadow: 2px 2px 0px #000;
-    background: rgba(0,0,0,0.6);
+    background: rgba(0, 0, 0, 0.6);
     padding: 5px 15px;
     border-radius: 10px;
 }
@@ -156,8 +159,10 @@ body {
 .wood-button {
     font-family: 'Changa One', cursive;
     font-size: 2rem;
-    color: #fff8dc; /* Crème */
-    background: #8B4513; /* Marron bois */
+    color: #fff8dc;
+    /* Crème */
+    background: #8B4513;
+    /* Marron bois */
     border: none;
     padding: 20px 60px;
     border-radius: 15px;
@@ -165,28 +170,31 @@ body {
     text-transform: uppercase;
     position: relative;
     /* Effet 3D du bouton */
-    box-shadow: 
-        inset 0px 5px 0px rgba(255,255,255,0.2), /* Reflet haut */
-        0px 8px 0px #5D2906, /* Épaisseur du bouton */
-        0px 15px 20px rgba(0,0,0,0.4); /* Ombre portée */
+    box-shadow:
+        inset 0px 5px 0px rgba(255, 255, 255, 0.2),
+        /* Reflet haut */
+        0px 8px 0px #5D2906,
+        /* Épaisseur du bouton */
+        0px 15px 20px rgba(0, 0, 0, 0.4);
+    /* Ombre portée */
     transition: all 0.1s;
 }
 
 .wood-button:hover {
     transform: translateY(4px);
-    box-shadow: 
-        inset 0px 5px 0px rgba(255,255,255,0.2),
+    box-shadow:
+        inset 0px 5px 0px rgba(255, 255, 255, 0.2),
         0px 4px 0px #5D2906,
-        0px 10px 10px rgba(0,0,0,0.4);
+        0px 10px 10px rgba(0, 0, 0, 0.4);
     background: #a05218;
 }
 
 .wood-button:active {
     transform: translateY(8px);
-    box-shadow: 
-        inset 0px 5px 0px rgba(255,255,255,0.2),
+    box-shadow:
+        inset 0px 5px 0px rgba(255, 255, 255, 0.2),
         0px 0px 0px #5D2906,
-        0px 0px 0px rgba(0,0,0,0.4);
+        0px 0px 0px rgba(0, 0, 0, 0.4);
 }
 
 .icon {
@@ -200,19 +208,22 @@ body {
 }
 
 /* HEADER & FOOTER */
-.navbar, .footer {
+.navbar,
+.footer {
     padding: 20px;
     display: flex;
     justify-content: center;
     color: white;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent);
 }
+
 .footer {
-    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
     flex-direction: column;
     align-items: center;
     gap: 10px;
 }
+
 .nav-links a {
     color: white;
     text-decoration: none;
@@ -220,6 +231,7 @@ body {
     font-weight: bold;
     text-transform: uppercase;
 }
+
 .socials span {
     font-size: 1.5rem;
     margin: 0 10px;
@@ -228,8 +240,15 @@ body {
 
 /* ANIMATIONS */
 @keyframes float {
-    0%, 100% { transform: translateY(0) rotate(-3deg); }
-    50% { transform: translateY(-10px) rotate(-3deg); }
+
+    0%,
+    100% {
+        transform: translateY(0) rotate(-3deg);
+    }
+
+    50% {
+        transform: translateY(-10px) rotate(-3deg);
+    }
 }
 
 /* GAME CONTAINER (Placeholder Scene 3D) */
@@ -241,7 +260,8 @@ body {
     width: 100vw;
     height: 100vh;
     background-color: #000;
-    display: none; /* Hidden by default, shown via JS */
+    display: none;
+    /* Hidden by default, shown via JS */
     flex-direction: column;
     justify-content: center;
     align-items: center;
@@ -279,6 +299,11 @@ body {
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
 }
