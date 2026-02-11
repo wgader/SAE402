@@ -2,7 +2,6 @@ import 'aframe';
 import 'aframe-extras';
 import 'aframe-physics-system';
 
-/* global THREE */
 
 console.log('☕ SAE 402 - Chargement...');
 
@@ -15,7 +14,7 @@ window.addEventListener('load', () => {
         const gameContainer = document.getElementById('game-container');
         const sceneEl = document.getElementById('scene');
         const cubeEl = document.getElementById('cube');
-        let cursorEl = document.getElementById('cursor'); // Changed to let
+        let cursorEl = document.getElementById('cursor');
 
         // Hide scene initially
         if (sceneEl) {
@@ -79,6 +78,87 @@ window.addEventListener('load', () => {
         let menuToggleLock = false; // Prevents flickering when holding button
         let coffeeMachineLock = false; // Prevents multiple coffee spawns
         let coffeeAudio = null; // Audio element for coffee sound
+
+        // --- TUTORIAL STATE ---
+        let tutorialStep = 0; // 0: Off, 1: Clean Floor, 2: Trash Shovel, 3: Place Machine, 4: Serve, 5: Done
+        let tutorialUI = null;
+        let tutorialText = null;
+        let activeStains = 0; // Track number of stains
+
+        function updateTutorialUI() {
+            if (!tutorialText) return;
+            let msg = "TUTORIAL:\n";
+
+            if (tutorialStep === 1) msg += "[  ] Nettoyez le sol (Balai, Pelle)\n";
+            else if (tutorialStep > 1) msg += "[x] Sol propre\n";
+
+            if (tutorialStep === 2) msg += "[  ] Jetez la Pelle à la poubelle\n";
+            else if (tutorialStep > 2) msg += "[x] Ramassage effectué\n";
+
+            if (tutorialStep === 3) msg += "[  ] Placez la Machine (Menu Y)\n";
+            else if (tutorialStep > 3) msg += "[x] Machine placee\n";
+
+            if (tutorialStep === 4) msg += "[  ] Servez un cafée au client\n";
+            else if (tutorialStep > 4) msg += "[x] Bravo! Barista pret!\n";
+
+            tutorialText.setAttribute('value', msg);
+
+            if (tutorialStep === 5) {
+                setTimeout(() => {
+                    if (tutorialUI) tutorialUI.setAttribute('visible', 'false');
+                }, 5000);
+            }
+        }
+
+        function createTutorialUI() {
+            const cam = document.getElementById('cam');
+            if (!cam) return;
+
+            const panel = document.createElement('a-entity');
+            panel.setAttribute('position', '0.6 0.2 -1'); // Top Right HUD
+            panel.setAttribute('rotation', '0 -15 0');
+
+            const bg = document.createElement('a-plane');
+            bg.setAttribute('width', '0.6');
+            bg.setAttribute('height', '0.4');
+            bg.setAttribute('color', '#000000');
+            bg.setAttribute('opacity', '0.7');
+            panel.appendChild(bg);
+
+            tutorialText = document.createElement('a-text');
+            tutorialText.setAttribute('value', 'Loading Tutorial...');
+            tutorialText.setAttribute('align', 'left');
+            tutorialText.setAttribute('position', '-0.28 0 0.01');
+            tutorialText.setAttribute('width', '1');
+            tutorialText.setAttribute('color', '#00FF00');
+            panel.appendChild(tutorialText);
+
+            cam.appendChild(panel);
+            tutorialUI = panel;
+            updateTutorialUI();
+        }
+
+        function spawnShovel() {
+            const shovel = document.createElement('a-entity');
+            shovel.setAttribute('gltf-model', 'url(models/Shovel.glb)');
+            shovel.setAttribute('scale', '0.05 0.05 0.05'); // Adjust scale blindly first, usually they are huge
+            shovel.setAttribute('position', '0 0.5 -1');
+            shovel.setAttribute('dynamic-body', 'mass:2');
+            shovel.setAttribute('class', 'clickable grabbable shovel-tool');
+
+            // Fallback visualization if model fails (using a child box)
+            const fallback = document.createElement('a-box');
+            fallback.setAttribute('width', '0.1');
+            fallback.setAttribute('height', '0.5');
+            fallback.setAttribute('depth', '0.1');
+            fallback.setAttribute('color', 'red');
+            fallback.setAttribute('visible', 'false');
+
+            sceneEl.appendChild(shovel);
+            spawnedObjects.push(shovel);
+            console.log('Shovel spawned');
+            if (debugEl) debugEl.textContent = 'Pelle apparue!';
+        }
 
         // --- COFFEE MACHINE AUDIO SETUP ---
         function initCoffeeAudio() {
@@ -157,7 +237,7 @@ window.addEventListener('load', () => {
 
         // --- TRASHCAN DELETION SYSTEM ---
         const trashcans = []; // Liste des poubelles dans la scène
-        const TRASH_RADIUS = 0.2; // Rayon de détection pour la suppression
+        const TRASH_RADIUS = 0.4; // Rayon de détection élargi (0.2 -> 0.4)
         let giveCoffeeLock = false; // Lock pour donner le café
 
         function removeObjectFromScene(objEl) {
@@ -179,6 +259,16 @@ window.addEventListener('load', () => {
 
             console.log('🗑️ Objet supprimé par la poubelle!');
             if (debugEl) debugEl.textContent = '🗑️ Objet jeté!';
+
+            // TUTORIAL STEP 2 CHECK: Shovel Removed (Check Step OR Class)
+            if (tutorialStep === 2) {
+                // If it was the shovel (either tutorial one or shop one)
+                if (objEl.classList.contains('shovel-tool') || objEl.classList.contains('dustpan-tool')) {
+                    tutorialStep = 3;
+                    updateTutorialUI();
+                    showARNotification('✅ Site Clean! Now Place Machine', 3000);
+                }
+            }
         }
 
         function checkTrashcanCollisions() {
@@ -332,8 +422,8 @@ window.addEventListener('load', () => {
                 welcomePanel.parentNode.removeChild(welcomePanel);
                 welcomePanel = null;
                 debugEl.textContent = '🟢 PANEL FERMÉ';
-                // Trigger initial customer spawn
-                setTimeout(spawnCustomer, 2000);
+                // Trigger initial customer spawn -> REMOVED (Handled by Tutorial now)
+                // setTimeout(spawnCustomer, 2000); 
             }
         }
 
@@ -406,11 +496,12 @@ window.addEventListener('load', () => {
             const items = [
                 // Row 1: Primitives + Basics
                 { type: 'gltf', model: 'models/CoffeeMachine.glb', color: '#fab1a0', label: 'COFFEE', menuScale: '0.2 0.2 0.2', spawnScale: '0.4 0.4 0.4' },
-                { type: 'gltf', model: 'models/TrashcanSmall.glb', color: '#a29bfe', label: 'POUBELLE', menuScale: '0.2 0.2 0.2', spawnScale: '0.8 0.8 0.8' },
+                { type: 'gltf', model: 'models/TrashcanSmall.glb', color: '#a29bfe', label: 'TRASH', menuScale: '0.2 0.2 0.2', spawnScale: '0.8 0.8 0.8' },
                 // Row 2 
                 { type: 'gltf', label: 'SPEAKER', model: 'models/BassSpeakers.glb', color: '#fff', menuScale: '0.1 0.1 0.1', spawnScale: '0.8 0.8 0.8' },
                 { type: 'gltf', label: 'BROOM', model: 'models/Broom.glb', color: '#fff', menuScale: '0.001 0.001 0.001', spawnScale: '0.004 0.004 0.004' },
                 { type: 'gltf', label: 'REGISTER', model: 'models/Cashregister.glb', color: '#fff', menuScale: '0.005 0.005 0.005', spawnScale: '0.04 0.04 0.04' },
+                { type: 'gltf', label: 'DUSTPAN', model: 'models/DustPan.glb', color: '#fff', menuScale: '0.08 0.08 0.08', spawnScale: '0.25 0.25 0.25' },
                 // Row 3
                 { type: 'gltf', label: 'SIGN', model: 'models/Coffeesign.glb', color: '#fff', menuScale: '0.04 0.04 0.04', spawnScale: '0.2 0.2 0.2' },
                 { type: 'gltf', label: 'COUCH', model: 'models/Couch.glb', color: '#fff', menuScale: '0.08 0.08 0.08', spawnScale: '0.3 0.3 0.3' },
@@ -561,10 +652,23 @@ window.addEventListener('load', () => {
             entity.setAttribute('class', 'clickable grabbable');
             entity.id = `spawned-${now}`;
 
+            // Si c'est une pelle, ajouter une classe spécifique pour le tutoriel/poubelle
+            if (model && model.includes('DustPan')) {
+                entity.classList.add('dustpan-tool');
+            }
+
             // Si c'est une poubelle, l'ajouter à la liste des trashcans (mais garde la même physique)
             if (model && model.includes('Trashcan')) {
                 entity.classList.add('trashcan');
                 trashcans.push(entity);
+            }
+
+            // TUTORIAL STEP 3 CHECK: Machine Placed
+            if (tutorialStep === 3 && model && model.includes('CoffeeMachine')) {
+                tutorialStep = 4;
+                updateTutorialUI();
+                showARNotification('✅ Machine Ready! Sending Customer...', 3000);
+                setTimeout(spawnCustomer, 2000); // Allow customer now
             }
 
             sceneEl.appendChild(entity);
@@ -638,6 +742,13 @@ window.addEventListener('load', () => {
 
                     // CREATE WELCOME PANEL FIRST
                     createWelcomePanel();
+
+                    // START TUTORIAL
+                    setTimeout(() => {
+                        tutorialStep = 1;
+                        createTutorialUI();
+                        // spawnDirtyCup(); // Wait for floor cleaning first
+                    }, 500);
 
                     // CREATE HUD MENU (but hidden)
                     createHUDInventory();
@@ -949,7 +1060,8 @@ window.addEventListener('load', () => {
                 const buttons = [];
 
                 // Search in inventory menu
-                if (inventoryEntity && inventoryEntity.object3D) {
+                const isShopOpen = inventoryEntity && inventoryEntity.getAttribute('visible') !== 'false';
+                if (inventoryEntity && inventoryEntity.object3D && isShopOpen) {
                     inventoryEntity.object3D.traverse(child => {
                         if (child.el && child.el.classList.contains('clickable') && child.isMesh) {
                             buttons.push(child);
@@ -1188,13 +1300,14 @@ window.addEventListener('load', () => {
 
             sceneEl.appendChild(stain);
             stains.push({ el: stain, health: 100 });
+            activeStains++; // Increment count
 
             console.log('Dirt spot spawned at', x, z);
         }
 
-        // Spawn initial stains
+        // Spawn initial stains (FIXED COUNT: 4)
         setTimeout(() => {
-            for (let i = 0; i < 5; i++) spawnRandomStain();
+            for (let i = 0; i < 4; i++) spawnRandomStain();
         }, 2000);
 
         function checkCleaning() {
@@ -1232,10 +1345,19 @@ window.addEventListener('load', () => {
                         // Remove
                         if (stainObj.el.parentNode) stainObj.el.parentNode.removeChild(stainObj.el);
                         stains.splice(index, 1);
+                        activeStains--; // Decrement count
                         if (debugEl) debugEl.textContent = 'Tache nettoyée !';
 
-                        // Spawn new one occasionally
-                        if (Math.random() > 0.5) spawnRandomStain();
+                        // TUTORIAL TRIGGER: Check if all stains are gone
+                        if (tutorialStep === 1 && activeStains <= 0) {
+                            tutorialStep = 2; // Move to Next Step
+                            updateTutorialUI();
+                            showARNotification('✅ Floor Clean! Trash the Shovel!', 3000);
+                            spawnShovel(); // Spawn the Shovel
+                        }
+
+                        // REMOVED Infinite Respawn Logic
+                        // if (Math.random() > 0.5) spawnRandomStain();
                     }
                 }
             });
@@ -1284,6 +1406,13 @@ window.addEventListener('load', () => {
         const QUEUE_POS = { x: 0, y: 0.75, z: -1.5 }; // z=-1.5m devant
 
         function spawnCustomer() {
+            // TUTORIAL GATE
+            // TUTORIAL GATE
+            if (tutorialStep !== 4) {
+                // console.log('⚠️ Customer blocked by Tutorial State');
+                return;
+            }
+
             // Limite à 1 client pour le test
             if (customers.length > 0) return;
 
@@ -1310,6 +1439,10 @@ window.addEventListener('load', () => {
             customer.classList.add('customer');
             customer.id = `customer-${Date.now()}`;
 
+            // DEBUG BOX REMOVED because it confuses the user
+            // If model fails, it will just be invisible or fallback to something else if we added error handling
+            // For now, clean scene is better than red box face.
+
             // Panneau de commande (Texte)
             const text = document.createElement('a-text');
             text.setAttribute('value', '1 Coffee please');
@@ -1334,7 +1467,7 @@ window.addEventListener('load', () => {
 
             sceneEl.appendChild(customer);
             customers.push(customer);
-            customers.push(customer);
+            // Duplicate push removed
 
             console.log(`Customer spawned: ${randomModel}`);
             showARNotification('☕ New Customer!', 2000);
@@ -1350,6 +1483,14 @@ window.addEventListener('load', () => {
             const idx = customers.indexOf(customer);
             if (idx > -1) customers.splice(idx, 1);
 
+            // TUTORIAL COMPLETE CHECK
+            if (tutorialStep === 4) {
+                tutorialStep = 5;
+                updateTutorialUI();
+                // "Bravo" message removed as requested
+                // showARNotification('🎉 TUTORIAL COMPLETE!', 5000);
+            }
+
             // Force visibility off immediately
             customer.setAttribute('visible', 'false');
 
@@ -1358,6 +1499,7 @@ window.addEventListener('load', () => {
                 customer.body.world.removeBody(customer.body);
             }
 
+            // Remove from DOM
             if (customer.parentNode) {
                 customer.parentNode.removeChild(customer);
             }
@@ -1397,8 +1539,10 @@ window.addEventListener('load', () => {
         // --- GLOBAL POLLING LOOP FOR ROBUSTNESS ---
         setInterval(() => {
             checkTrashcanCollisions();
-            checkCoffeeDelivery(); // Manual distance check
-            checkCleaning();
+            // Ensure customer is present in Step 4
+            if (tutorialStep === 4 && customers.length === 0) {
+                if (Math.random() < 0.05) spawnCustomer(); // Retry ~1/sec
+            }
         }, 50); // Faster loop (50ms)
 
         function checkCoffeeDelivery() {
