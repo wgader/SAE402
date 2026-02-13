@@ -97,8 +97,9 @@
       <!-- CONTROLLERS A-FRAME (Supprimés pour éviter conflits, gérés manuellement dans main.js) -->
     </a-entity>
 
-    <!-- CUBE -->
-    <!-- CUBE REMOVED -->
+    <!-- BILLET (dollar) - cache au debut, visible apres livraison -->
+    <a-entity id="dollar-cube" gltf-model="url(models/Dollar.glb)" scale="0.25 0.25 0.25" position="0 -50 0"
+      visible="false" class="clickable grabbable dollar-bill"></a-entity>
 
     <!-- Curseur hit-test -->
     <a-ring id="cursor" position="0 0 -1" rotation="-90 0 0" radius-inner="0.05" radius-outer="0.08" color="#00FF00"

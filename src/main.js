@@ -84,26 +84,33 @@ window.addEventListener('load', () => {
         let tutorialUI = null;
         let tutorialText = null;
         let activeStains = 0; // Track number of stains
+        var deliveryDebugLock = false; // Empeche le debug d'etre ecrase apres livraison
 
         function updateTutorialUI() {
             if (!tutorialText) return;
-            let msg = "TUTORIAL:\n";
+            let msg = "TO DO:\n\n";
 
-            if (tutorialStep === 1) msg += "[  ] Nettoyez le sol (Balai, Pelle)\n";
-            else if (tutorialStep > 1) msg += "[x] Sol propre\n";
+            if (tutorialStep === 1) msg += "> Buy Broom & Dustpan (Menu Y)\n  Then clean the floor!\n";
+            else if (tutorialStep > 1) msg += "[x] Floor cleaned\n";
 
-            if (tutorialStep === 2) msg += "[  ] Jetez la Pelle à la poubelle\n";
-            else if (tutorialStep > 2) msg += "[x] Ramassage effectué\n";
+            if (tutorialStep === 2) msg += "> Throw Dustpan in the Trash\n";
+            else if (tutorialStep > 2) msg += "[x] Cleanup done\n";
 
-            if (tutorialStep === 3) msg += "[  ] Placez la Machine (Menu Y)\n";
-            else if (tutorialStep > 3) msg += "[x] Machine placee\n";
+            if (tutorialStep === 3) msg += "> Place Cash Register (Menu Y)\n";
+            else if (tutorialStep > 3) msg += "[x] Register placed\n";
 
-            if (tutorialStep === 4) msg += "[  ] Servez un cafée au client\n";
-            else if (tutorialStep > 4) msg += "[x] Bravo! Barista pret!\n";
+            if (tutorialStep === 4) msg += "> Place Coffee Machine (Menu Y)\n";
+            else if (tutorialStep > 4) msg += "[x] Machine placed\n";
+
+            if (tutorialStep === 5) msg += "> Serve coffee to customer\n";
+            else if (tutorialStep > 5) msg += "[x] Customer served\n";
+
+            if (tutorialStep === 6) msg += "> Collect the Bill (-> Register)\n";
+            else if (tutorialStep > 6) msg += "[x] Service Complete!\n";
 
             tutorialText.setAttribute('value', msg);
 
-            if (tutorialStep === 5) {
+            if (tutorialStep === 7) {
                 setTimeout(() => {
                     if (tutorialUI) tutorialUI.setAttribute('visible', 'false');
                 }, 5000);
@@ -115,22 +122,33 @@ window.addEventListener('load', () => {
             if (!cam) return;
 
             const panel = document.createElement('a-entity');
-            panel.setAttribute('position', '0.6 0.2 -1'); // Top Right HUD
-            panel.setAttribute('rotation', '0 -15 0');
+            panel.setAttribute('position', '0.2 0.15 -0.8');
+            panel.setAttribute('rotation', '0 -10 0');
 
             const bg = document.createElement('a-plane');
-            bg.setAttribute('width', '0.6');
-            bg.setAttribute('height', '0.4');
-            bg.setAttribute('color', '#000000');
-            bg.setAttribute('opacity', '0.7');
+            bg.setAttribute('width', '0.5');
+            bg.setAttribute('height', '0.35');
+            bg.setAttribute('color', '#1a1a2e');
+            bg.setAttribute('opacity', '0.85');
+            bg.setAttribute('side', 'double');
             panel.appendChild(bg);
 
+            // Border glow
+            const border = document.createElement('a-plane');
+            border.setAttribute('width', '0.52');
+            border.setAttribute('height', '0.37');
+            border.setAttribute('color', '#00FF88');
+            border.setAttribute('opacity', '0.3');
+            border.setAttribute('position', '0 0 -0.001');
+            panel.appendChild(border);
+
             tutorialText = document.createElement('a-text');
-            tutorialText.setAttribute('value', 'Loading Tutorial...');
+            tutorialText.setAttribute('value', 'Loading...');
             tutorialText.setAttribute('align', 'left');
-            tutorialText.setAttribute('position', '-0.28 0 0.01');
-            tutorialText.setAttribute('width', '1');
-            tutorialText.setAttribute('color', '#00FF00');
+            tutorialText.setAttribute('position', '-0.22 0.1 0.01');
+            tutorialText.setAttribute('width', '0.8');
+            tutorialText.setAttribute('color', '#FFFFFF');
+            tutorialText.setAttribute('font', 'mozillavr');
             panel.appendChild(tutorialText);
 
             cam.appendChild(panel);
@@ -139,25 +157,30 @@ window.addEventListener('load', () => {
         }
 
         function spawnShovel() {
-            const shovel = document.createElement('a-entity');
-            shovel.setAttribute('gltf-model', 'url(models/Shovel.glb)');
-            shovel.setAttribute('scale', '0.05 0.05 0.05'); // Adjust scale blindly first, usually they are huge
-            shovel.setAttribute('position', '0 0.5 -1');
-            shovel.setAttribute('dynamic-body', 'mass:2');
-            shovel.setAttribute('class', 'clickable grabbable shovel-tool');
+            // Spawn DustPan (Pelle)
+            const dustpan = document.createElement('a-entity');
+            dustpan.setAttribute('gltf-model', 'url(models/DustPan.glb)');
+            dustpan.setAttribute('scale', '0.3 0.3 0.3');
+            dustpan.setAttribute('position', '0 1 -1'); // In front of user, floating slightly
+            dustpan.setAttribute('dynamic-body', 'shape: hull; mass: 2');
+            dustpan.setAttribute('class', 'clickable grabbable dustpan-tool');
 
-            // Fallback visualization if model fails (using a child box)
-            const fallback = document.createElement('a-box');
-            fallback.setAttribute('width', '0.1');
-            fallback.setAttribute('height', '0.5');
-            fallback.setAttribute('depth', '0.1');
-            fallback.setAttribute('color', 'red');
-            fallback.setAttribute('visible', 'false');
+            sceneEl.appendChild(dustpan);
+            spawnedObjects.push(dustpan);
 
-            sceneEl.appendChild(shovel);
-            spawnedObjects.push(shovel);
-            console.log('Shovel spawned');
-            if (debugEl) debugEl.textContent = 'Pelle apparue!';
+            // Spawn Trashcan (Poubelle)
+            const trashcan = document.createElement('a-entity');
+            trashcan.setAttribute('gltf-model', 'url(models/TrashcanSmall.glb)');
+            trashcan.setAttribute('scale', '0.5 0.5 0.5');
+            trashcan.setAttribute('position', '0.5 0 -1'); // On floor, slightly right
+            trashcan.setAttribute('static-body', 'shape: hull');
+            trashcan.setAttribute('class', 'trashcan');
+
+            sceneEl.appendChild(trashcan);
+            trashcans.push(trashcan);
+
+            console.log('DustPan and Trashcan auto-spawned');
+            if (debugEl) debugEl.textContent = 'Pelle et Poubelle apparues!';
         }
 
         // --- COFFEE MACHINE AUDIO SETUP ---
@@ -183,7 +206,7 @@ window.addEventListener('load', () => {
 
             const cup = document.createElement('a-entity');
             cup.setAttribute('gltf-model', 'url(models/Coffeecup.glb)');
-            cup.setAttribute('scale', '0.12 0.12 0.12'); // Bigger cup as requested
+            cup.setAttribute('scale', '0.14 0.14 0.14'); // Bigger cup as requested
             cup.setAttribute('position', `${cupPos.x} ${cupPos.y} ${cupPos.z}`);
             cup.setAttribute('dynamic-body', 'mass:0.3;linearDamping:0.5;angularDamping:0.5');
             cup.setAttribute('class', 'clickable grabbable');
@@ -239,6 +262,8 @@ window.addEventListener('load', () => {
         const trashcans = []; // Liste des poubelles dans la scène
         const TRASH_RADIUS = 0.4; // Rayon de détection élargi (0.2 -> 0.4)
         let giveCoffeeLock = false; // Lock pour donner le café
+        var bgMusic = null; // Musique de fond
+        var dollarCubeEl = null; // Cube vert pre-cree (billet)
 
         function removeObjectFromScene(objEl) {
             if (!objEl || !objEl.parentNode) return;
@@ -266,7 +291,7 @@ window.addEventListener('load', () => {
                 if (objEl.classList.contains('shovel-tool') || objEl.classList.contains('dustpan-tool')) {
                     tutorialStep = 3;
                     updateTutorialUI();
-                    showARNotification('✅ Site Clean! Now Place Machine', 3000);
+                    showARNotification('Site Clean! Now place the Register', 3000);
                 }
             }
         }
@@ -500,7 +525,7 @@ window.addEventListener('load', () => {
                 // Row 2 
                 { type: 'gltf', label: 'SPEAKER', model: 'models/BassSpeakers.glb', color: '#fff', menuScale: '0.1 0.1 0.1', spawnScale: '0.8 0.8 0.8' },
                 { type: 'gltf', label: 'BROOM', model: 'models/Broom.glb', color: '#fff', menuScale: '0.001 0.001 0.001', spawnScale: '0.004 0.004 0.004' },
-                { type: 'gltf', label: 'REGISTER', model: 'models/Cashregister.glb', color: '#fff', menuScale: '0.005 0.005 0.005', spawnScale: '0.04 0.04 0.04' },
+                { type: 'gltf', label: 'REGISTER', model: 'models/Cashregister.glb', color: '#fff', menuScale: '0.007 0.007 0.007', spawnScale: '0.03 0.03 0.03' },
                 { type: 'gltf', label: 'DUSTPAN', model: 'models/DustPan.glb', color: '#fff', menuScale: '0.08 0.08 0.08', spawnScale: '0.25 0.25 0.25' },
                 // Row 3
                 { type: 'gltf', label: 'SIGN', model: 'models/Coffeesign.glb', color: '#fff', menuScale: '0.04 0.04 0.04', spawnScale: '0.2 0.2 0.2' },
@@ -602,12 +627,20 @@ window.addEventListener('load', () => {
             lastSpawnTime = now;
 
             // Get camera position and direction
+            // FORCE RELEASE ANY GRABBED OBJECT (Fix Head Tracking Glitch)
+            if (grabbed) release();
+
+            // Get camera position and direction
             const cam = document.getElementById('cam');
             const camPos = new THREE.Vector3();
             const camDir = new THREE.Vector3();
 
-            cam.object3D.getWorldPosition(camPos);
-            cam.object3D.getWorldDirection(camDir);
+            if (cam) {
+                cam.object3D.getWorldPosition(camPos);
+                cam.object3D.getWorldDirection(camDir);
+            } else {
+                return; // Safety
+            }
 
             // Spawn 1.5m in front of camera
             // getWorldDirection retourne la direction vers laquelle on regarde (axe -Z)
@@ -663,11 +696,18 @@ window.addEventListener('load', () => {
                 trashcans.push(entity);
             }
 
-            // TUTORIAL STEP 3 CHECK: Machine Placed
-            if (tutorialStep === 3 && model && model.includes('CoffeeMachine')) {
+            // TUTORIAL STEP 3 CHECK: Cash Register Placed
+            if (tutorialStep === 3 && model && model.includes('Cashregister')) {
                 tutorialStep = 4;
                 updateTutorialUI();
-                showARNotification('✅ Machine Ready! Sending Customer...', 3000);
+                showARNotification('Register Ready!', 3000);
+            }
+
+            // TUTORIAL STEP 4 CHECK: Machine Placed
+            if (tutorialStep === 4 && model && model.includes('CoffeeMachine')) {
+                tutorialStep = 5;
+                updateTutorialUI();
+                showARNotification('Machine Ready! Customer coming...', 3000);
                 setTimeout(spawnCustomer, 2000); // Allow customer now
             }
 
@@ -752,6 +792,14 @@ window.addEventListener('load', () => {
 
                     // CREATE HUD MENU (but hidden)
                     createHUDInventory();
+
+                    // Lancer musique de fond
+                    try {
+                        bgMusic = new Audio('sounds/bg_music.mp3');
+                        bgMusic.loop = true;
+                        bgMusic.volume = 0.15;
+                        bgMusic.play().catch(function (e) { console.warn('BG music autoplay blocked:', e); });
+                    } catch (e) { console.warn('BG music error:', e); }
 
                     if (debugEl) debugEl.textContent = 'AR OK! Read the instructions';
 
@@ -911,42 +959,6 @@ window.addEventListener('load', () => {
 
                         if (aBtn && aBtn.pressed && !giveCoffeeLock) {
                             debugEl.textContent = `A pressed! Grab:${grabbed}`;
-
-                            // Si on tient un café, le donner au client
-                            if (grabbed && currentGrabbedEl) {
-                                const isCoffee =
-                                    (currentGrabbedEl.classList && currentGrabbedEl.classList.contains('coffee-cup')) ||
-                                    (currentGrabbedEl.dataset && currentGrabbedEl.dataset.isCoffee === 'true') ||
-                                    (currentGrabbedEl.id && currentGrabbedEl.id.includes('coffee-cup'));
-
-                                debugEl.textContent = `Coffee:${isCoffee} Cust:${customers.length}`;
-
-                                if (isCoffee && customers.length > 0) {
-                                    giveCoffeeLock = true;
-                                    console.log('✅ COFFEE GIVEN BY BUTTON A!');
-                                    showARNotification('✅ THANKS! Perfect coffee!', 3000);
-                                    debugEl.textContent = '✅ Café livré!';
-
-                                    // Supprimer la tasse
-                                    const cupIdx = spawnedObjects.indexOf(currentGrabbedEl);
-                                    if (cupIdx > -1) spawnedObjects.splice(cupIdx, 1);
-                                    if (currentGrabbedEl.body && currentGrabbedEl.body.world) {
-                                        currentGrabbedEl.body.world.removeBody(currentGrabbedEl.body);
-                                    }
-                                    if (currentGrabbedEl.parentNode) currentGrabbedEl.parentNode.removeChild(currentGrabbedEl);
-
-                                    // Reset grab state
-                                    grabbed = false;
-                                    grabController = null;
-                                    currentGrabbedEl = null;
-
-                                    // Supprimer le client
-                                    const customer = customers[0];
-                                    removeCustomer(customer);
-
-                                    setTimeout(() => { giveCoffeeLock = false; }, 500);
-                                }
-                            }
                         }
                     }
 
@@ -1122,6 +1134,12 @@ window.addEventListener('load', () => {
                         else if (el.dataset.spawnType) {
                             console.log('SPAWN COMMAND (Left/Right) for', el.dataset.spawnType);
                             el.setAttribute('color', '#00cec9');
+
+                            // FORCE RELEASE to prevent "Head Tracking" glitch
+                            if (window.grabbed) {
+                                release();
+                            }
+
                             spawnObject(el.dataset.spawnType, el.dataset.spawnColor, el.dataset.spawnModel, el.dataset.spawnScale);
                         }
                     }
@@ -1322,12 +1340,17 @@ window.addEventListener('load', () => {
             // Since we grab it by the handle (offset -0.6), the "bottom" is closer to the true origin of the mesh.
             // But we need the actual world coordinates of the mesh origin (which is the bottom usually).
 
+            // Calculate Broom Tip Position
             const broomPos = new THREE.Vector3();
             currentGrabbedEl.object3D.getWorldPosition(broomPos);
 
-            // Check collision with stains
-            stains.forEach((stainObj, index) => {
-                if (!stainObj.el || !stainObj.el.parentNode) return;
+            // Iterate BACKWARDS to safely remove items while looping
+            for (let i = stains.length - 1; i >= 0; i--) {
+                const stainObj = stains[i];
+                if (!stainObj.el || !stainObj.el.parentNode) {
+                    stains.splice(i, 1);
+                    continue;
+                }
 
                 const stainPos = stainObj.el.object3D.position;
                 const dist = new THREE.Vector2(broomPos.x, broomPos.z).distanceTo(new THREE.Vector2(stainPos.x, stainPos.z));
@@ -1335,32 +1358,29 @@ window.addEventListener('load', () => {
 
                 // If close enough (Cleaning radius)
                 if (dist < 0.4 && verticalDist < 0.5) {
-                    // Reduce health (fade out)
+                    // Reduce health
                     stainObj.health -= 5;
                     stainObj.el.setAttribute('opacity', stainObj.health / 100);
 
-                    // Pop effect or particle could go here
-
                     if (stainObj.health <= 0) {
-                        // Remove
+                        // Remove from DOM
                         if (stainObj.el.parentNode) stainObj.el.parentNode.removeChild(stainObj.el);
-                        stains.splice(index, 1);
-                        activeStains--; // Decrement count
+                        // Remove from Array
+                        stains.splice(i, 1);
+
                         if (debugEl) debugEl.textContent = 'Tache nettoyée !';
-
-                        // TUTORIAL TRIGGER: Check if all stains are gone
-                        if (tutorialStep === 1 && activeStains <= 0) {
-                            tutorialStep = 2; // Move to Next Step
-                            updateTutorialUI();
-                            showARNotification('✅ Floor Clean! Trash the Shovel!', 3000);
-                            spawnShovel(); // Spawn the Shovel
-                        }
-
-                        // REMOVED Infinite Respawn Logic
-                        // if (Math.random() > 0.5) spawnRandomStain();
                     }
                 }
-            });
+            }
+
+            // CHECK TUTORIAL PROGRESS (Outside loop)
+            // Use stains.length directly for robustness
+            if (tutorialStep === 1 && stains.length === 0) {
+                tutorialStep = 2; // Move to Next Step
+                updateTutorialUI();
+                showARNotification('✅ Floor Clean! Trash the DustPan!', 3000);
+                spawnShovel(); // Spawn the DustPan & Trashcan
+            }
         }
 
         // Add checkCleaning to loop (using setInterval or inside xrLoop)
@@ -1408,7 +1428,7 @@ window.addEventListener('load', () => {
         function spawnCustomer() {
             // TUTORIAL GATE
             // TUTORIAL GATE
-            if (tutorialStep !== 4) {
+            if (tutorialStep !== 5) {
                 // console.log('⚠️ Customer blocked by Tutorial State');
                 return;
             }
@@ -1467,7 +1487,6 @@ window.addEventListener('load', () => {
 
             sceneEl.appendChild(customer);
             customers.push(customer);
-            // Duplicate push removed
 
             console.log(`Customer spawned: ${randomModel}`);
             showARNotification('☕ New Customer!', 2000);
@@ -1520,27 +1539,124 @@ window.addEventListener('load', () => {
             }
         }, 10000);
 
-        // --- DELIVERY LOGIC (Extracted) ---
+        // --- DELIVERY ---
         function deliverCoffee(customer, cupEl) {
-            if (customer._delivered) return; // Prevent double trigger
+            if (customer._delivered) return;
             customer._delivered = true;
+            deliveryDebugLock = true;
 
-            console.log('✅ DELIVERY SUCCESS!');
-            // showARNotification('✅ THANKS! Perfect coffee!', 3000); // REMOVED: Follows head, annoying.
-            if (debugEl) debugEl.textContent = '✅ Café livré (Collision)!';
+            // Tutorial
+            try {
+                if (tutorialStep === 5) {
+                    tutorialStep = 6;
+                    updateTutorialUI();
+                }
+            } catch (e) { console.warn('delivery tuto err:', e); }
 
-            // Remove Cup
-            if (cupEl.parentNode) cupEl.parentNode.removeChild(cupEl);
+            // Notification
+            try {
+                showARNotification('Collect the dollar bill!', 3000);
+            } catch (e) { console.warn('delivery notif err:', e); }
 
-            // Remove Customer
-            removeCustomer(customer);
+            // Release grab
+            try {
+                if (currentGrabbedEl === cupEl) {
+                    grabbed = false;
+                    grabController = null;
+                    currentGrabbedEl = null;
+                }
+            } catch (e) { }
+
+            // Dollar bill appears in front of customer
+            try {
+                var dollarCube = document.getElementById('dollar-cube');
+                if (dollarCube) {
+                    var cpos = customer.getAttribute('position');
+                    var px = 0, py = 1.2, pz = 0;
+                    if (cpos) {
+                        px = (cpos.x !== undefined) ? cpos.x : 0;
+                        py = ((cpos.y !== undefined) ? cpos.y : 0) + 1.2;
+                        pz = ((cpos.z !== undefined) ? cpos.z : 0) + 0.5;
+                    }
+                    dollarCube.setAttribute('position', px + ' ' + py + ' ' + pz);
+                    dollarCube.setAttribute('visible', 'true');
+                    if (spawnedObjects.indexOf(dollarCube) === -1) spawnedObjects.push(dollarCube);
+                }
+            } catch (e) { console.warn('delivery dollar err:', e); }
+
+            // Coffee disappears
+            try {
+                var ci = spawnedObjects.indexOf(cupEl);
+                if (ci > -1) spawnedObjects.splice(ci, 1);
+                if (cupEl.parentNode) cupEl.parentNode.removeChild(cupEl);
+            } catch (e) {
+                try { if (cupEl.object3D) { cupEl.object3D.visible = false; } } catch (e2) { }
+            }
+
+            try { updateTutorialUI(); } catch (e) { }
+            if (debugEl) debugEl.textContent = 'Customer served!';
+        }
+
+        function checkDollarCollection() {
+            // 1. Find Dollars
+            const dollars = [];
+            document.querySelectorAll('.dollar-bill').forEach(el => dollars.push(el));
+            if (dollars.length === 0) return;
+
+            // 2. Find Cash Registers
+            const registers = [];
+            spawnedObjects.forEach(obj => {
+                const model = obj.getAttribute('gltf-model');
+                if (model && model.includes('Cashregister')) registers.push(obj);
+            });
+            if (registers.length === 0) return;
+
+            // 3. Check Collisions
+            dollars.forEach(dollar => {
+                if (!dollar.object3D) return;
+                const dPos = new THREE.Vector3();
+                dollar.object3D.getWorldPosition(dPos);
+
+                registers.forEach(reg => {
+                    if (!reg.object3D) return;
+                    const rPos = new THREE.Vector3();
+                    reg.object3D.getWorldPosition(rPos);
+
+                    if (dPos.distanceTo(rPos) < 0.4) { // 40cm trigger radius
+                        console.log('MONEY COLLECTED!');
+
+                        // Jouer le son money
+                        try {
+                            var moneySfx = new Audio('sounds/money.mp3');
+                            moneySfx.volume = 0.8;
+                            moneySfx.play();
+                        } catch (e) { console.warn('Money sound error:', e); }
+
+                        // Finish Tutorial Loop
+                        if (tutorialStep === 6) {
+                            tutorialStep = 7;
+                            updateTutorialUI();
+                            showARNotification('Money collected! Service complete!', 4000);
+                        }
+
+                        // Remove Dollar
+                        if (dollar.parentNode) dollar.parentNode.removeChild(dollar);
+
+                        // Remove Customer (Now they leave)
+                        if (customers.length > 0) {
+                            removeCustomer(customers[0]);
+                        }
+                    }
+                });
+            });
         }
 
         // --- GLOBAL POLLING LOOP FOR ROBUSTNESS ---
         setInterval(() => {
             checkTrashcanCollisions();
-            // Ensure customer is present in Step 4
-            if (tutorialStep === 4 && customers.length === 0) {
+            checkDollarCollection();
+            // Ensure customer is present in Step 5
+            if (tutorialStep === 5 && customers.length === 0) {
                 if (Math.random() < 0.05) spawnCustomer(); // Retry ~1/sec
             }
         }, 50); // Faster loop (50ms)
@@ -1598,7 +1714,7 @@ window.addEventListener('load', () => {
                 }
 
                 // Show debug distance to nearest cup
-                if (debugEl && closestDist < 10) {
+                if (debugEl && closestDist < 10 && !deliveryDebugLock) {
                     debugEl.textContent = `Dist: ${closestDist.toFixed(2)}m (Need < 0.6)`;
                     if (closestDist < 0.6) debugEl.style.color = 'lime';
                     else debugEl.style.color = 'yellow';
