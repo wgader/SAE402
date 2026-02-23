@@ -80,14 +80,53 @@ window.addEventListener('load', () => {
         let coffeeAudio = null; // Audio element for coffee sound
 
         // --- TUTORIAL STATE ---
-        let tutorialStep = 0; // 0: Off, 1: Clean Floor, 2: Trash Shovel, 3: Place Machine, 4: Serve, 5: Done
+        let tutorialStep = 0;
         let tutorialUI = null;
         let tutorialText = null;
-        let activeStains = 0; // Track number of stains
-        var deliveryDebugLock = false; // Empeche le debug d'etre ecrase apres livraison
+        let activeStains = 0;
+        var deliveryDebugLock = false;
+
+        // --- GAME MODE STATE ---
+        var gameMode = false;
+        var customerQueue = [];  // All customers in the queue
+        var activeCustomer = null;  // Current customer being served
+        var coffeesOrdered = 0;  // How many coffees current customer wants
+        var coffeesDelivered = 0;  // How many delivered so far
+        var billCollected = false;  // Has the bill been collected
+        var totalServed = 0;  // Total customers served
+        var totalEarnings = 0;  // Total money earned
+        const SERVICE_POS = { x: 0, z: -1.5 };  // Where customer stands to be served
+        const QUEUE_SPACING = 1.2;  // Space between customers in queue
+        const QUEUE_START_Z = -4.0;  // Where queue starts (behind service pos)
 
         function updateTutorialUI() {
             if (!tutorialText) return;
+
+            // GAME MODE: show current order
+            if (gameMode) {
+                let msg = 'CAFE OPEN!\n';
+                msg += 'Served: ' + totalServed + ' | $' + totalEarnings + '\n\n';
+                if (activeCustomer) {
+                    msg += 'ORDER: ' + coffeesOrdered + ' coffee' + (coffeesOrdered > 1 ? 's' : '') + '\n';
+                    for (var i = 0; i < coffeesOrdered; i++) {
+                        if (i < coffeesDelivered) msg += '[x] Coffee ' + (i + 1) + '\n';
+                        else if (i === coffeesDelivered) msg += '> Make coffee ' + (i + 1) + '\n';
+                        else msg += '[  ] Coffee ' + (i + 1) + '\n';
+                    }
+                    if (coffeesDelivered >= coffeesOrdered && !billCollected) {
+                        msg += '\n> Collect bill -> Register\n';
+                    } else if (billCollected) {
+                        msg += '\n[x] Payment done!\n';
+                    }
+                } else {
+                    msg += 'Waiting for customer...\n';
+                }
+                msg += '\nQueue: ' + customerQueue.length + ' waiting';
+                tutorialText.setAttribute('value', msg);
+                return;
+            }
+
+            // TUTORIAL MODE
             let msg = "TO DO:\n\n";
 
             if (tutorialStep === 1) msg += "> Buy Broom & Dustpan (Menu Y)\n  Then clean the floor!\n";
@@ -106,14 +145,15 @@ window.addEventListener('load', () => {
             else if (tutorialStep > 5) msg += "[x] Customer served\n";
 
             if (tutorialStep === 6) msg += "> Collect the Bill (-> Register)\n";
-            else if (tutorialStep > 6) msg += "[x] Service Complete!\n";
+            else if (tutorialStep > 6) msg += "[x] Setup Complete!\n";
 
             tutorialText.setAttribute('value', msg);
 
+            // Tutorial finished -> start game mode
             if (tutorialStep === 7) {
-                setTimeout(() => {
-                    if (tutorialUI) tutorialUI.setAttribute('visible', 'false');
-                }, 5000);
+                setTimeout(function () {
+                    startGameMode();
+                }, 3000);
             }
         }
 
@@ -157,30 +197,38 @@ window.addEventListener('load', () => {
         }
 
         function spawnShovel() {
-            // Spawn DustPan (Pelle)
-            const dustpan = document.createElement('a-entity');
+            // Get player position from camera
+            var cam = document.getElementById('cam');
+            var cx = 0, cy = 0, cz = 0;
+            if (cam && cam.object3D) {
+                var camPos = new THREE.Vector3();
+                cam.object3D.getWorldPosition(camPos);
+                cx = camPos.x;
+                cy = camPos.y;
+                cz = camPos.z;
+            }
+
+            // Spawn DustPan in front of player (~1m ahead, at waist height)
+            var dustpan = document.createElement('a-entity');
             dustpan.setAttribute('gltf-model', 'url(models/DustPan.glb)');
             dustpan.setAttribute('scale', '0.3 0.3 0.3');
-            dustpan.setAttribute('position', '0 1 -1'); // In front of user, floating slightly
-            dustpan.setAttribute('dynamic-body', 'shape: hull; mass: 2');
+            dustpan.setAttribute('position', cx + ' ' + (cy - 0.3) + ' ' + (cz - 1));
             dustpan.setAttribute('class', 'clickable grabbable dustpan-tool');
 
             sceneEl.appendChild(dustpan);
             spawnedObjects.push(dustpan);
 
-            // Spawn Trashcan (Poubelle)
-            const trashcan = document.createElement('a-entity');
+            // Spawn Trashcan (on floor, slightly right of player)
+            var trashcan = document.createElement('a-entity');
             trashcan.setAttribute('gltf-model', 'url(models/TrashcanSmall.glb)');
             trashcan.setAttribute('scale', '0.5 0.5 0.5');
-            trashcan.setAttribute('position', '0.5 0 -1'); // On floor, slightly right
-            trashcan.setAttribute('static-body', 'shape: hull');
+            trashcan.setAttribute('position', (cx + 0.5) + ' 0 ' + (cz - 1));
             trashcan.setAttribute('class', 'trashcan');
 
             sceneEl.appendChild(trashcan);
             trashcans.push(trashcan);
 
-            console.log('DustPan and Trashcan auto-spawned');
-            if (debugEl) debugEl.textContent = 'Pelle et Poubelle apparues!';
+            console.log('DustPan and Trashcan spawned near player');
         }
 
         // --- COFFEE MACHINE AUDIO SETUP ---
@@ -291,7 +339,7 @@ window.addEventListener('load', () => {
                 if (objEl.classList.contains('shovel-tool') || objEl.classList.contains('dustpan-tool')) {
                     tutorialStep = 3;
                     updateTutorialUI();
-                    showARNotification('Site Clean! Now place the Register', 3000);
+                    // showARNotification removed: TODO panel is sufficient
                 }
             }
         }
@@ -700,14 +748,14 @@ window.addEventListener('load', () => {
             if (tutorialStep === 3 && model && model.includes('Cashregister')) {
                 tutorialStep = 4;
                 updateTutorialUI();
-                showARNotification('Register Ready!', 3000);
+                // notification removed: TODO panel sufficient
             }
 
             // TUTORIAL STEP 4 CHECK: Machine Placed
             if (tutorialStep === 4 && model && model.includes('CoffeeMachine')) {
                 tutorialStep = 5;
                 updateTutorialUI();
-                showARNotification('Machine Ready! Customer coming...', 3000);
+                // notification removed: TODO panel sufficient
                 setTimeout(spawnCustomer, 2000); // Allow customer now
             }
 
@@ -1376,31 +1424,35 @@ window.addEventListener('load', () => {
             // CHECK TUTORIAL PROGRESS (Outside loop)
             // Use stains.length directly for robustness
             if (tutorialStep === 1 && stains.length === 0) {
-                tutorialStep = 2; // Move to Next Step
+                tutorialStep = 2;
                 updateTutorialUI();
-                showARNotification('✅ Floor Clean! Trash the DustPan!', 3000);
-                spawnShovel(); // Spawn the DustPan & Trashcan
+                // Player buys dustpan & trash from shop menu
             }
         }
 
         // Add checkCleaning to loop (using setInterval or inside xrLoop)
         setInterval(checkCleaning, 50); // 20 times per second
 
-        // --- AR NOTIFICATION SYSTEM ---
-        function showARNotification(message, duration = 2000) {
-            const cam = document.getElementById('cam');
+        function showARNotification(message, duration) {
+            if (!duration) duration = 2000;
+            var cam = document.getElementById('cam');
             if (!cam) return;
 
-            // Create notification text in AR
-            const notification = document.createElement('a-text');
+            // Remove any existing notifications first
+            var old = cam.querySelectorAll('.ar-notif');
+            for (var i = 0; i < old.length; i++) {
+                if (old[i].parentNode) old[i].parentNode.removeChild(old[i]);
+            }
+
+            var notification = document.createElement('a-text');
+            notification.classList.add('ar-notif');
             notification.setAttribute('value', message);
             notification.setAttribute('align', 'center');
-            notification.setAttribute('position', '0 0.3 -1'); // Devant les yeux
-            notification.setAttribute('width', '3');
-            notification.setAttribute('color', '#00ff00');
+            notification.setAttribute('position', '0 -0.15 -0.8');
+            notification.setAttribute('width', '1.2');
+            notification.setAttribute('color', '#FFD700');
             notification.setAttribute('opacity', '1');
-            notification.setAttribute('background', '#000000');
-            notification.setAttribute('padding', '0.1');
+            notification.setAttribute('font', 'mozillavr');
 
             cam.appendChild(notification);
 
@@ -1421,142 +1473,208 @@ window.addEventListener('load', () => {
             }, duration);
         }
 
-        // --- SIMPLE CUSTOMER SYSTEM ---
+        // --- CUSTOMER SYSTEM ---
         const customers = [];
-        const QUEUE_POS = { x: 0, y: 0.75, z: -1.5 }; // z=-1.5m devant
 
-        function spawnCustomer() {
-            // TUTORIAL GATE
-            // TUTORIAL GATE
-            if (tutorialStep !== 5) {
-                // console.log('⚠️ Customer blocked by Tutorial State');
-                return;
-            }
+        // Create a single customer entity
+        function createCustomer(queueIndex) {
+            var models = ['models/Punk.glb'];
+            var randomModel = models[Math.floor(Math.random() * models.length)];
+            var numCoffees = Math.floor(Math.random() * 3) + 1; // 1-3 coffees
 
-            // Limite à 1 client pour le test
-            if (customers.length > 0) return;
-
-            console.log('Attempting to spawn customer...');
-            if (debugEl) debugEl.textContent = '🧍 NEW CUSTOMER ARRIVING...';
-
-            // Random Model
-            const models = ['models/Punk.glb', 'models/Punk.glb'];
-            const randomModel = models[Math.floor(Math.random() * models.length)];
-
-            // Modèle 3D du client
-            const customer = document.createElement('a-entity');
-            customer.setAttribute('gltf-model', `url(${randomModel})`);
-            customer.setAttribute('position', `${QUEUE_POS.x} 0 ${QUEUE_POS.z}`); // y=0 car le modèle est sur le sol
-
-            // Scale adjustment based on model
-            if (randomModel.includes('Grandpa')) {
-                customer.setAttribute('scale', '0.011 0.011 0.011');
-            } else {
-                customer.setAttribute('scale', '1 1 1'); // Punk is standard
-            }
-
-            customer.setAttribute('rotation', '0 0 0'); // Face à l'utilisateur
+            var customer = document.createElement('a-entity');
+            customer.setAttribute('gltf-model', 'url(' + randomModel + ')');
+            var qz = QUEUE_START_Z - (queueIndex * QUEUE_SPACING);
+            customer.setAttribute('position', SERVICE_POS.x + ' 0 ' + qz);
+            customer.setAttribute('scale', '1 1 1');
+            customer.setAttribute('rotation', '0 0 0');
             customer.classList.add('customer');
-            customer.id = `customer-${Date.now()}`;
+            customer.id = 'customer-' + Date.now() + '-' + queueIndex;
 
-            // DEBUG BOX REMOVED because it confuses the user
-            // If model fails, it will just be invisible or fallback to something else if we added error handling
-            // For now, clean scene is better than red box face.
-
-            // Panneau de commande (Texte)
-            const text = document.createElement('a-text');
-            text.setAttribute('value', '1 Coffee please');
+            // Order text above head
+            var text = document.createElement('a-text');
+            text.setAttribute('value', numCoffees + ' Coffee' + (numCoffees > 1 ? 's' : '') + ' please!');
             text.setAttribute('align', 'center');
-            text.setAttribute('position', '0 2.2 0.3'); // Au dessus de la tête (modèle ~1.8m)
+            text.setAttribute('position', '0 2.2 0.3');
             text.setAttribute('scale', '1 1 1');
             text.setAttribute('color', '#FFD700');
             text.setAttribute('font', 'mozillavr');
             customer.appendChild(text);
+            customer._orderText = text;
 
-            // GREEN CIRCLE (Floor)
-            const circle = document.createElement('a-ring');
+            // Green circle on floor
+            var circle = document.createElement('a-ring');
             circle.setAttribute('radius-inner', '0.4');
             circle.setAttribute('radius-outer', '0.5');
             circle.setAttribute('color', '#00ff00');
-            circle.setAttribute('rotation', '-90 0 0'); // Flat on ground
-            circle.setAttribute('position', '0 0.02 0'); // Slightly up
+            circle.setAttribute('rotation', '-90 0 0');
+            circle.setAttribute('position', '0 0.02 0');
+            circle.setAttribute('visible', 'false'); // Only visible when being served
             customer.appendChild(circle);
+            customer._circle = circle;
 
-            // PHYSICS BODY (Static) to allow Cup collision
-            customer.setAttribute('static-body', 'shape: hull');
+            customer._coffees = numCoffees;
+            customer._delivered = false;
+            customer._queueIndex = queueIndex;
 
             sceneEl.appendChild(customer);
+            return customer;
+        }
+
+        // Tutorial mode: spawn single customer
+        function spawnCustomer() {
+            if (tutorialStep !== 5) return;
+            if (customers.length > 0) return;
+
+            var customer = createCustomer(0);
+            customer.setAttribute('position', SERVICE_POS.x + ' 0 ' + SERVICE_POS.z);
+            customer._circle.setAttribute('visible', 'true');
+            customer._coffees = 1; // Tutorial: always 1 coffee
+            customer._orderText.setAttribute('value', '1 Coffee please!');
             customers.push(customer);
+            showARNotification('New Customer!', 2000);
+        }
 
-            console.log(`Customer spawned: ${randomModel}`);
-            showARNotification('☕ New Customer!', 2000);
+        // Start game mode after tutorial
+        var gameModeStarted = false; // Guard against multiple calls
+        function startGameMode() {
+            if (gameModeStarted) return;
+            gameModeStarted = true;
+            try {
+                gameMode = true;
+                if (debugEl) debugEl.textContent = 'GAME MODE STARTING...';
+                showARNotification('Cafe is OPEN! Serve customers!', 4000);
+                if (tutorialUI) tutorialUI.setAttribute('visible', 'true');
+                spawnCustomerQueue();
+            } catch (e) {
+                if (debugEl) debugEl.textContent = 'GAME START ERR: ' + e.message;
+                console.error('startGameMode error:', e);
+            }
+        }
 
-            // Update debug text
-            setTimeout(() => {
-                if (debugEl) debugEl.textContent = 'Customer Waiting!';
-            }, 1000);
+        // Spawn a queue of 3 customers
+        function spawnCustomerQueue() {
+            if (!gameMode) return;
+            try {
+                // Clear old queue
+                for (var i = customerQueue.length - 1; i >= 0; i--) {
+                    removeCustomerClean(customerQueue[i]);
+                }
+                customerQueue = [];
+                activeCustomer = null;
+
+                // Create 3 customers in a line
+                for (var q = 0; q < 3; q++) {
+                    var c = createCustomer(q);
+                    customerQueue.push(c);
+                }
+                if (debugEl) debugEl.textContent = 'Queue: ' + customerQueue.length + ' customers';
+
+                // Advance first customer
+                advanceQueue();
+            } catch (e) {
+                if (debugEl) debugEl.textContent = 'QUEUE ERR: ' + e.message;
+                console.error('spawnCustomerQueue error:', e);
+            }
+        }
+
+        // Move the first customer in queue to service position
+        function advanceQueue() {
+            try {
+                if (customerQueue.length === 0) {
+                    activeCustomer = null;
+                    coffeesOrdered = 0;
+                    coffeesDelivered = 0;
+                    billCollected = false;
+                    updateTutorialUI();
+                    setTimeout(function () {
+                        if (gameMode) spawnCustomerQueue();
+                    }, 3000);
+                    return;
+                }
+
+                activeCustomer = customerQueue[0];
+                coffeesOrdered = activeCustomer._coffees;
+                coffeesDelivered = 0;
+                billCollected = false;
+                activeCustomer._delivered = false;
+
+                // Animate active customer sliding to service position
+                var targetPos = SERVICE_POS.x + ' 0 ' + SERVICE_POS.z;
+                activeCustomer.setAttribute('animation', {
+                    property: 'position',
+                    to: targetPos,
+                    dur: 1500,
+                    easing: 'easeInOutQuad'
+                });
+                // Show green circle after animation
+                var ac = activeCustomer;
+                setTimeout(function () {
+                    if (ac && ac._circle) ac._circle.setAttribute('visible', 'true');
+                    if (ac) ac.removeAttribute('animation');
+                }, 1600);
+
+                // Animate remaining customers sliding forward in queue
+                for (var i = 1; i < customerQueue.length; i++) {
+                    var qz = QUEUE_START_Z - ((i - 1) * QUEUE_SPACING);
+                    var dest = SERVICE_POS.x + ' 0 ' + qz;
+                    customerQueue[i].setAttribute('animation', {
+                        property: 'position',
+                        to: dest,
+                        dur: 2000,
+                        easing: 'easeInOutQuad'
+                    });
+                    // Clean up animation attribute after it finishes
+                    (function (c) {
+                        setTimeout(function () { if (c) c.removeAttribute('animation'); }, 1600);
+                    })(customerQueue[i]);
+                }
+
+                showARNotification('Customer: ' + coffeesOrdered + ' coffee' + (coffeesOrdered > 1 ? 's' : '') + '!', 3000);
+                updateTutorialUI();
+            } catch (e) {
+                if (debugEl) debugEl.textContent = 'ADVANCE ERR: ' + e.message;
+                console.error('advanceQueue error:', e);
+            }
+        }
+
+        function removeCustomerClean(customer) {
+            if (!customer) return;
+            var idx = customers.indexOf(customer);
+            if (idx > -1) customers.splice(idx, 1);
+            customer.setAttribute('visible', 'false');
+            try {
+                if (customer.body && customer.body.world) customer.body.world.removeBody(customer.body);
+            } catch (e) { }
+            if (customer.parentNode) customer.parentNode.removeChild(customer);
         }
 
         function removeCustomer(customer) {
             if (!customer) return;
-            const idx = customers.indexOf(customer);
+            var idx = customers.indexOf(customer);
             if (idx > -1) customers.splice(idx, 1);
 
             // TUTORIAL COMPLETE CHECK
             if (tutorialStep === 4) {
                 tutorialStep = 5;
                 updateTutorialUI();
-                // "Bravo" message removed as requested
-                // showARNotification('🎉 TUTORIAL COMPLETE!', 5000);
             }
 
-            // Force visibility off immediately
             customer.setAttribute('visible', 'false');
+            try {
+                if (customer.body && customer.body.world) customer.body.world.removeBody(customer.body);
+            } catch (e) { }
+            if (customer.parentNode) customer.parentNode.removeChild(customer);
 
-            // Remove physics if any
-            if (customer.body && customer.body.world) {
-                customer.body.world.removeBody(customer.body);
+            // Tutorial mode: respawn
+            if (!gameMode) {
+                setTimeout(spawnCustomer, 4000);
             }
-
-            // Remove from DOM
-            if (customer.parentNode) {
-                customer.parentNode.removeChild(customer);
-            }
-            console.log('Client despawned via removeCustomer');
-
-            // Loop: Spawn new customer after delay
-            if (debugEl) debugEl.textContent = 'Customer left. Next in 4s...';
-            setTimeout(spawnCustomer, 4000);
         }
-
-        // --- BACKUP SPAWN TRIGGER (For Refresh Issues) ---
-        // If no customer exists 10 seconds after load (and AR started), force spawn one.
-        setTimeout(() => {
-            if (customers.length === 0 && sceneEl && sceneEl.style.display !== 'none') {
-                console.warn('⚠️ Backup Spawn Triggered!');
-                if (debugEl) debugEl.textContent = '⚠️ Auto-Spawning Backup Customer';
-                spawnCustomer();
-            }
-        }, 10000);
 
         // --- DELIVERY ---
         function deliverCoffee(customer, cupEl) {
-            if (customer._delivered) return;
-            customer._delivered = true;
             deliveryDebugLock = true;
-
-            // Tutorial
-            try {
-                if (tutorialStep === 5) {
-                    tutorialStep = 6;
-                    updateTutorialUI();
-                }
-            } catch (e) { console.warn('delivery tuto err:', e); }
-
-            // Notification
-            try {
-                showARNotification('Collect the dollar bill!', 3000);
-            } catch (e) { console.warn('delivery notif err:', e); }
 
             // Release grab
             try {
@@ -1567,7 +1685,52 @@ window.addEventListener('load', () => {
                 }
             } catch (e) { }
 
-            // Dollar bill appears in front of customer
+            // Coffee disappears
+            try {
+                var ci = spawnedObjects.indexOf(cupEl);
+                if (ci > -1) spawnedObjects.splice(ci, 1);
+                if (cupEl.parentNode) cupEl.parentNode.removeChild(cupEl);
+            } catch (e) {
+                try { if (cupEl.object3D) { cupEl.object3D.visible = false; } } catch (e2) { }
+            }
+
+            // GAME MODE: track multi-coffee delivery
+            if (gameMode && customer === activeCustomer) {
+                coffeesDelivered++;
+                var remaining = coffeesOrdered - coffeesDelivered;
+                if (remaining > 0) {
+                    showARNotification(remaining + ' more coffee' + (remaining > 1 ? 's' : '') + ' to go!', 2000);
+                    customer._orderText.setAttribute('value', remaining + ' more coffee' + (remaining > 1 ? 's' : ''));
+                } else {
+                    // All coffees delivered! Show dollar bill
+                    customer._delivered = true;
+                    showDollarBill(customer);
+                    showARNotification('Collect the bill!', 3000);
+                    customer._orderText.setAttribute('value', 'Thanks! Here is your bill');
+                }
+                updateTutorialUI();
+                return;
+            }
+
+            // TUTORIAL MODE: single coffee
+            if (!gameMode) {
+                customer._delivered = true;
+                try {
+                    if (tutorialStep === 5) {
+                        tutorialStep = 6;
+                        updateTutorialUI();
+                    }
+                } catch (e) { }
+                showDollarBill(customer);
+                try { showARNotification('Collect the dollar bill!', 3000); } catch (e) { }
+            }
+
+            try { updateTutorialUI(); } catch (e) { }
+            if (debugEl) debugEl.textContent = 'Coffee delivered!';
+        }
+
+        // Show dollar bill near customer
+        function showDollarBill(customer) {
             try {
                 var dollarCube = document.getElementById('dollar-cube');
                 if (dollarCube) {
@@ -1580,69 +1743,74 @@ window.addEventListener('load', () => {
                     }
                     dollarCube.setAttribute('position', px + ' ' + py + ' ' + pz);
                     dollarCube.setAttribute('visible', 'true');
+                    dollarCube._collected = false; // Reset so it can be collected again
                     if (spawnedObjects.indexOf(dollarCube) === -1) spawnedObjects.push(dollarCube);
                 }
-            } catch (e) { console.warn('delivery dollar err:', e); }
-
-            // Coffee disappears
-            try {
-                var ci = spawnedObjects.indexOf(cupEl);
-                if (ci > -1) spawnedObjects.splice(ci, 1);
-                if (cupEl.parentNode) cupEl.parentNode.removeChild(cupEl);
-            } catch (e) {
-                try { if (cupEl.object3D) { cupEl.object3D.visible = false; } } catch (e2) { }
-            }
-
-            try { updateTutorialUI(); } catch (e) { }
-            if (debugEl) debugEl.textContent = 'Customer served!';
+            } catch (e) { console.warn('dollar bill err:', e); }
         }
 
         function checkDollarCollection() {
-            // 1. Find Dollars
-            const dollars = [];
-            document.querySelectorAll('.dollar-bill').forEach(el => dollars.push(el));
+            var dollars = [];
+            document.querySelectorAll('.dollar-bill').forEach(function (el) { dollars.push(el); });
             if (dollars.length === 0) return;
 
-            // 2. Find Cash Registers
-            const registers = [];
-            spawnedObjects.forEach(obj => {
-                const model = obj.getAttribute('gltf-model');
+            var registers = [];
+            spawnedObjects.forEach(function (obj) {
+                var model = obj.getAttribute('gltf-model');
                 if (model && model.includes('Cashregister')) registers.push(obj);
             });
             if (registers.length === 0) return;
 
-            // 3. Check Collisions
-            dollars.forEach(dollar => {
+            dollars.forEach(function (dollar) {
                 if (!dollar.object3D) return;
-                const dPos = new THREE.Vector3();
+                if (dollar._collected) return;
+                if (dollar.getAttribute('visible') === 'false') return;
+                var dPos = new THREE.Vector3();
                 dollar.object3D.getWorldPosition(dPos);
 
-                registers.forEach(reg => {
+                registers.forEach(function (reg) {
+                    if (dollar._collected) return;
                     if (!reg.object3D) return;
-                    const rPos = new THREE.Vector3();
+                    var rPos = new THREE.Vector3();
                     reg.object3D.getWorldPosition(rPos);
 
-                    if (dPos.distanceTo(rPos) < 0.4) { // 40cm trigger radius
-                        console.log('MONEY COLLECTED!');
-
-                        // Jouer le son money
+                    if (dPos.distanceTo(rPos) < 0.4) {
+                        dollar._collected = true;
+                        // Money sound
                         try {
                             var moneySfx = new Audio('sounds/money.mp3');
                             moneySfx.volume = 0.8;
                             moneySfx.play();
-                        } catch (e) { console.warn('Money sound error:', e); }
+                        } catch (e) { }
 
-                        // Finish Tutorial Loop
+                        // Hide dollar
+                        dollar.setAttribute('visible', 'false');
+                        dollar.setAttribute('position', '0 -50 0');
+
+                        // GAME MODE: customer done, advance queue
+                        if (gameMode) {
+                            billCollected = true;
+                            var earned = coffeesOrdered * 5;
+                            totalServed++;
+                            totalEarnings += earned;
+                            updateTutorialUI();
+                            showARNotification('+$' + earned + ' | Total: $' + totalEarnings + ' | Clients: ' + totalServed, 2500);
+
+                            // Remove current customer, advance queue
+                            var served = customerQueue.shift();
+                            removeCustomerClean(served);
+                            setTimeout(function () {
+                                advanceQueue();
+                            }, 2000);
+                            return;
+                        }
+
+                        // TUTORIAL MODE
                         if (tutorialStep === 6) {
                             tutorialStep = 7;
                             updateTutorialUI();
-                            showARNotification('Money collected! Service complete!', 4000);
+                            showARNotification('Money collected! Tutorial complete!', 4000);
                         }
-
-                        // Remove Dollar
-                        if (dollar.parentNode) dollar.parentNode.removeChild(dollar);
-
-                        // Remove Customer (Now they leave)
                         if (customers.length > 0) {
                             removeCustomer(customers[0]);
                         }
@@ -1651,71 +1819,69 @@ window.addEventListener('load', () => {
             });
         }
 
-        // --- GLOBAL POLLING LOOP FOR ROBUSTNESS ---
-        setInterval(() => {
+        // --- GLOBAL POLLING LOOP ---
+        setInterval(function () {
             checkTrashcanCollisions();
             checkDollarCollection();
-            // Ensure customer is present in Step 5
-            if (tutorialStep === 5 && customers.length === 0) {
-                if (Math.random() < 0.05) spawnCustomer(); // Retry ~1/sec
+            // Tutorial: ensure customer present at step 5
+            if ((!gameMode) && tutorialStep === 5 && customers.length === 0) {
+                if (Math.random() < 0.05) spawnCustomer();
             }
-        }, 50); // Faster loop (50ms)
+        }, 50);
 
         function checkCoffeeDelivery() {
-            if (customers.length === 0) return;
+            // In game mode, only check activeCustomer
+            var checkTargets = [];
+            if (gameMode) {
+                if (activeCustomer && !activeCustomer._delivered) checkTargets.push(activeCustomer);
+            } else {
+                // Tutorial mode: check customers array
+                for (var ci = 0; ci < customers.length; ci++) {
+                    if (!customers[ci]._delivered) checkTargets.push(customers[ci]);
+                }
+            }
+            if (checkTargets.length === 0) return;
 
-            // Iterate over all customers (usually just 1)
-            for (const customer of customers) {
-                if (!customer.object3D || customer._delivered) continue;
+            for (var t = 0; t < checkTargets.length; t++) {
+                var customer = checkTargets[t];
+                if (!customer.object3D) continue;
 
-                const custPos = new THREE.Vector3();
+                var custPos = new THREE.Vector3();
                 customer.object3D.getWorldPosition(custPos);
 
-                let closestDist = 999;
+                var closestDist = 999;
 
-                // Check all coffee cups
-                for (let i = spawnedObjects.length - 1; i >= 0; i--) {
-                    const obj = spawnedObjects[i];
+                for (var i = spawnedObjects.length - 1; i >= 0; i--) {
+                    var obj = spawnedObjects[i];
                     if (!obj || !obj.object3D) continue;
 
-                    // Is it a cup?
-                    const isCoffee =
+                    var isCoffee =
                         (obj.classList && obj.classList.contains('coffee-cup')) ||
                         (obj.dataset && obj.dataset.isCoffee === 'true') ||
                         (obj.id && obj.id.includes('coffee-cup'));
 
                     if (!isCoffee) continue;
 
-                    const cupPos = new THREE.Vector3();
+                    var cupPos = new THREE.Vector3();
                     obj.object3D.getWorldPosition(cupPos);
 
-                    // --- CYLINDRICAL ZONE CHECK ---
-                    // 1. Horizontal Distance (XZ Plane)
-                    const distXZ = Math.sqrt(
+                    var distXZ = Math.sqrt(
                         Math.pow(custPos.x - cupPos.x, 2) +
                         Math.pow(custPos.z - cupPos.z, 2)
                     );
 
                     if (distXZ < closestDist) closestDist = distXZ;
 
-                    // 2. Vertical Height (Y Plane) relative to customer base
-                    // Assuming customer is at y=0 or ground level.
-                    // Cup should be above ground (0) and below head height (~2m)
-                    const heightDiff = Math.abs(cupPos.y - custPos.y);
+                    var heightDiff = Math.abs(cupPos.y - custPos.y);
 
-                    // LOGIC: Inside Cylinder?
-                    // Radius: 0.6m (Green circle is ~0.5m radius)
-                    // Height: 2.0m
                     if (distXZ < 0.6 && heightDiff < 2.0) {
-                        console.log(`✅ ZONE ENTRY DETECTED! DistXZ:${distXZ.toFixed(2)} Height:${heightDiff.toFixed(2)}`);
                         deliverCoffee(customer, obj);
-                        return; // One delivery at a time
+                        return;
                     }
                 }
 
-                // Show debug distance to nearest cup
                 if (debugEl && closestDist < 10 && !deliveryDebugLock) {
-                    debugEl.textContent = `Dist: ${closestDist.toFixed(2)}m (Need < 0.6)`;
+                    debugEl.textContent = 'Dist: ' + closestDist.toFixed(2) + 'm (Need < 0.6)';
                     if (closestDist < 0.6) debugEl.style.color = 'lime';
                     else debugEl.style.color = 'yellow';
                 }
