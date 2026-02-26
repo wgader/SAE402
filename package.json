@@ -17,6 +17,7 @@
     "aframe-environment-component": "^1.5.0",
     "aframe-extras": "^7.6.1",
     "aframe-physics-system": "^4.0.2",
-    "aframe-state-component": "^7.1.1"
+    "aframe-state-component": "^7.1.1",
+    "three": "^0.183.1"
   }
 }

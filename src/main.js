@@ -1,6 +1,15 @@
 import 'aframe';
+
 import 'aframe-extras';
 import 'aframe-physics-system';
+
+// Import new architecture modules
+import './systems/game-manager.js';
+import './components/coffee-machine.js';
+import './components/sink.js';
+import './components/ar-hit-test.js';
+import './components/draggable.js';
+import './components/customer.js';
 
 // Component: make entity face camera on Y axis only
 AFRAME.registerComponent('face-camera', {
@@ -18,7 +27,7 @@ AFRAME.registerComponent('face-camera', {
 
 console.log('☕ SAE 402 - Chargement...');
 
-window.addEventListener('load', () => {
+function initGame() {
     setTimeout(() => {
         const debugEl = document.getElementById('debug');
         const surfacesEl = document.getElementById('surfaces');
@@ -85,6 +94,15 @@ window.addEventListener('load', () => {
         var grabIdCounter = 0;
         const surfaces = [];
         const spawnedObjects = [];
+
+        // Globally expose for components
+        window.registerSpawnedObject = function (el) {
+            spawnedObjects.push(el);
+            if (el.classList && el.classList.contains('trashcan') && typeof trashcans !== 'undefined') {
+                trashcans.push(el);
+            }
+        };
+
         // Legacy aliases for code that still reads these
         let grabbed = false;
         let grabController = null;
@@ -255,145 +273,9 @@ window.addEventListener('load', () => {
             console.log('DustPan and Trashcan spawned near player');
         }
 
-        // --- COFFEE MACHINE AUDIO SETUP ---
-        function initCoffeeAudio() {
-            coffeeAudio = new Audio('/sounds/public_assets_café.MP3');
-            coffeeAudio.volume = 0.7;
-        }
-        initCoffeeAudio();
+        // --- COMPONENTS MOVED TO src/components/ ---
+        // Coffee Machine and Sink logic is now handled by A-Frame components.
 
-        // --- SPAWN COFFEE CUP FUNCTION ---
-        function spawnCoffeeCup(machineEntity) {
-            if (!machineEntity || !machineEntity.object3D) return;
-
-            const machinePos = new THREE.Vector3();
-            machineEntity.object3D.getWorldPosition(machinePos);
-
-            // Position à droite de la machine (offset de 0.15m sur X)
-            const cupPos = {
-                x: machinePos.x + 0.15,
-                y: machinePos.y + 0.05, // Légèrement au dessus du sol
-                z: machinePos.z
-            };
-
-            const cup = document.createElement('a-entity');
-            cup.setAttribute('gltf-model', 'url(models/Coffeecup.glb)');
-            cup.setAttribute('scale', '0.14 0.14 0.14'); // Bigger cup as requested
-            cup.setAttribute('position', `${cupPos.x} ${cupPos.y} ${cupPos.z}`);
-            cup.setAttribute('dynamic-body', 'mass:0.3;linearDamping:0.5;angularDamping:0.5');
-            cup.setAttribute('class', 'clickable grabbable');
-            cup.classList.add('coffee-cup'); // Ajouter classe spécifique
-            cup.id = `coffee-cup-${Date.now()}`;
-
-            // Marquer comme objet café pour le grab
-            cup.dataset.isCoffee = 'true';
-
-            // COLLISION LISTENER ON CUP (More reliable for dynamic bodies)
-            cup.addEventListener('collide', (e) => {
-                const collidedEl = e.detail.body.el;
-                if (!collidedEl) return;
-
-                // Check if we hit a customer
-                if (collidedEl.classList.contains('customer')) {
-                    console.log('☕ CUP HIT CUSTOMER!');
-                    if (typeof deliverCoffee === 'function') {
-                        deliverCoffee(collidedEl, cup);
-                    }
-                }
-            });
-
-            sceneEl.appendChild(cup);
-            spawnedObjects.push(cup);
-
-            console.log('☕ Tasse de café créée à:', cupPos);
-            if (debugEl) debugEl.textContent = '☕ Café prêt!';
-        }
-
-        // --- COFFEE MACHINE INTERACTION ---
-        function handleCoffeeMachineClick(machineEntity) {
-            if (coffeeMachineLock) return; // Déjà en cours
-            coffeeMachineLock = true;
-
-            console.log('☕ Machine à café activée!');
-            if (debugEl) debugEl.textContent = '☕ Préparation du café...';
-
-            // Jouer le son
-            if (coffeeAudio) {
-                coffeeAudio.currentTime = 0;
-                coffeeAudio.play().catch(e => console.log('Audio error:', e));
-            }
-
-            // Café rapide
-            setTimeout(() => {
-                spawnCoffeeCup(machineEntity);
-                coffeeMachineLock = false;
-            }, 200);
-        }
-
-        // --- SPAWN GLASS FUNCTION ---
-        function spawnGlass(sinkEntity) {
-            if (!sinkEntity || !sinkEntity.object3D) return;
-
-            const sinkPos = new THREE.Vector3();
-            sinkEntity.object3D.getWorldPosition(sinkPos);
-
-            // Same approach as spawnCoffeeCup but adjusted for Sink dimensions
-            const glassPos = {
-                x: sinkPos.x - 0.2, // Offset to center better if origin is side-based
-                y: sinkPos.y + 0.7, // Higher spawn to come from "above"
-                z: sinkPos.z
-            };
-
-            const glass = document.createElement('a-entity');
-            // Use Cup model for water
-            glass.setAttribute('gltf-model', 'url(models/Cup.glb)');
-            glass.setAttribute('scale', '0.6 0.6 0.6');
-            glass.setAttribute('position', `${glassPos.x} ${glassPos.y} ${glassPos.z}`);
-            glass.setAttribute('dynamic-body', 'mass:0.3;linearDamping:0.5;angularDamping:0.5');
-            glass.setAttribute('class', 'clickable grabbable');
-            glass.classList.add('water-glass');
-            glass.id = `glass-${Date.now()}`;
-            glass.dataset.isWater = 'true';
-
-            // Blue water indicator inside the cup - adjusted for 0.6 scale
-            var waterMark = document.createElement('a-sphere');
-            waterMark.setAttribute('radius', '0.08'); // Larger to fill the cup
-            waterMark.setAttribute('color', '#74b9ff');
-            waterMark.setAttribute('opacity', '0.8');
-            waterMark.setAttribute('position', '0 0.08 0'); // Slightly lower to fix gap
-            glass.appendChild(waterMark);
-
-            glass.addEventListener('collide', (e) => {
-                const collidedEl = e.detail.body.el;
-                if (!collidedEl) return;
-                if (collidedEl.classList.contains('customer')) {
-                    console.log('🥤 WATER HIT CUSTOMER!');
-                    if (typeof deliverCoffee === 'function') {
-                        deliverCoffee(collidedEl, glass);
-                    }
-                }
-            });
-
-            sceneEl.appendChild(glass);
-            spawnedObjects.push(glass);
-
-            console.log('🥤 Water glass spawned at:', glassPos);
-            if (debugEl) debugEl.textContent = '🥤 Water ready!';
-        }
-
-        // --- SINK INTERACTION ---
-        function handleSinkClick(sinkEntity) {
-            if (sinkLock) return;
-            sinkLock = true;
-
-            console.log('🥤 Sink activated!');
-            if (debugEl) debugEl.textContent = '🥤 Filling glass...';
-
-            setTimeout(() => {
-                spawnGlass(sinkEntity);
-                sinkLock = false;
-            }, 200);
-        }
 
         // --- TRASHCAN DELETION SYSTEM ---
         const trashcans = []; // Liste des poubelles dans la scène
@@ -826,6 +708,11 @@ window.addEventListener('load', () => {
                     entity.setAttribute('gltf-model', `url(${model})`);
                     // Utiliser le scale personnalisé ou un défaut de 0.1
                     entity.setAttribute('scale', customScale || '0.1 0.1 0.1');
+
+                    // ATTACH ECS COMPONENTS
+                    if (model && model.includes('CoffeeMachine')) entity.setAttribute('coffee-machine', '');
+                    if (model && model.includes('Sink')) entity.setAttribute('sink', '');
+
                     break;
                 case 'tetrahedron':
                     entity = document.createElement('a-tetrahedron');
@@ -1170,11 +1057,9 @@ window.addEventListener('load', () => {
                                     if (hitEntity) {
                                         const hitModel = hitEntity.getAttribute('gltf-model');
                                         console.log('🎯 Hit:', hitModel);
-                                        if (hitModel && hitModel.includes('Sink')) {
-                                            handleSinkClick(hitEntity);
-                                        } else {
-                                            handleCoffeeMachineClick(hitEntity);
-                                        }
+                                        // TRIGGER ECS COMPONENT EVENT
+                                        hitEntity.emit('interact');
+
                                     }
                                 } else {
                                     // FALLBACK: proximity check if raycast missed
@@ -1199,11 +1084,9 @@ window.addEventListener('load', () => {
                                     if (closestMachine) {
                                         const hitModel = closestMachine.getAttribute('gltf-model');
                                         console.log('📍 Proximity hit:', hitModel, 'dist:', closestDist.toFixed(2));
-                                        if (hitModel && hitModel.includes('Sink')) {
-                                            handleSinkClick(closestMachine);
-                                        } else {
-                                            handleCoffeeMachineClick(closestMachine);
-                                        }
+                                        // TRIGGER ECS COMPONENT EVENT
+                                        closestMachine.emit('interact');
+
                                     }
                                 }
                             }
@@ -2430,4 +2313,10 @@ window.addEventListener('load', () => {
             }
         }
     }, 100);
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initGame);
+} else {
+    initGame();
+}

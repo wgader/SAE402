@@ -95,7 +95,10 @@ body {
 
 /* LANDING PAGE CONTAINER */
 .landing-container {
-    position: relative;
+    position: absolute;
+    /* Changed from relative to absolute */
+    z-index: 100;
+    /* Ensured it stays on top of A-Frame scene */
     width: 100%;
     height: 100vh;
     /* Remplace par ton image de fond générée */
