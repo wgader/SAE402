@@ -2,6 +2,19 @@ import 'aframe';
 import 'aframe-extras';
 import 'aframe-physics-system';
 
+// Component: make entity face camera on Y axis only
+AFRAME.registerComponent('face-camera', {
+    tick: function () {
+        var camera = this.el.sceneEl.camera;
+        if (!camera) return;
+        var camPos = new THREE.Vector3();
+        camera.getWorldPosition(camPos);
+        var elPos = new THREE.Vector3();
+        this.el.object3D.getWorldPosition(elPos);
+        var angle = Math.atan2(camPos.x - elPos.x, camPos.z - elPos.z);
+        this.el.object3D.rotation.y = angle;
+    }
+});
 
 console.log('☕ SAE 402 - Chargement...');
 
@@ -67,16 +80,20 @@ window.addEventListener('load', () => {
         let xrRefSpace = null;
         let hitTestSource = null;
 
-        // Grab state
-        let grabbed = false;
-        let grabController = null;
-        let velocities = [];
+        // Grab state — per-hand for dual grab
+        var grabs = {}; // key: controller id, value: { controller, el, velocities }
+        var grabIdCounter = 0;
         const surfaces = [];
         const spawnedObjects = [];
-        let currentGrabbedEl = null; // Track which element is grabbed
+        // Legacy aliases for code that still reads these
+        let grabbed = false;
+        let grabController = null;
+        let currentGrabbedEl = null;
+        let velocities = [];
 
         let menuToggleLock = false; // Prevents flickering when holding button
         let coffeeMachineLock = false; // Prevents multiple coffee spawns
+        let sinkLock = false; // Prevents multiple glass spawns
         let coffeeAudio = null; // Audio element for coffee sound
 
         // --- TUTORIAL STATE ---
@@ -98,6 +115,13 @@ window.addEventListener('load', () => {
         const SERVICE_POS = { x: 0, z: -1.5 };  // Where customer stands to be served
         const QUEUE_SPACING = 1.2;  // Space between customers in queue
         const QUEUE_START_Z = -4.0;  // Where queue starts (behind service pos)
+
+        // --- EVENT SCHEDULER STATE ---
+        var gameEventTimer = null;       // Timer for next event
+        var patienceTimers = [];         // Active patience intervals
+        const PATIENCE_DURATION_MIN = 15000;  // 15s min patience
+        const PATIENCE_DURATION_MAX = 25000;  // 25s max patience
+        const PATIENCE_PENALTY = 5;           // $5 penalty for angry customer
 
         function updateTutorialUI() {
             if (!tutorialText) return;
@@ -299,11 +323,76 @@ window.addEventListener('load', () => {
                 coffeeAudio.play().catch(e => console.log('Audio error:', e));
             }
 
-            // Attendre 1.5 secondes puis faire apparaître la tasse
+            // Café rapide
             setTimeout(() => {
                 spawnCoffeeCup(machineEntity);
-                coffeeMachineLock = false; // Débloquer pour le prochain café
-            }, 1500);
+                coffeeMachineLock = false;
+            }, 200);
+        }
+
+        // --- SPAWN GLASS FUNCTION ---
+        function spawnGlass(sinkEntity) {
+            if (!sinkEntity || !sinkEntity.object3D) return;
+
+            const sinkPos = new THREE.Vector3();
+            sinkEntity.object3D.getWorldPosition(sinkPos);
+
+            // Same approach as spawnCoffeeCup but adjusted for Sink dimensions
+            const glassPos = {
+                x: sinkPos.x - 0.2, // Offset to center better if origin is side-based
+                y: sinkPos.y + 0.7, // Higher spawn to come from "above"
+                z: sinkPos.z
+            };
+
+            const glass = document.createElement('a-entity');
+            // Use Cup model for water
+            glass.setAttribute('gltf-model', 'url(models/Cup.glb)');
+            glass.setAttribute('scale', '0.6 0.6 0.6');
+            glass.setAttribute('position', `${glassPos.x} ${glassPos.y} ${glassPos.z}`);
+            glass.setAttribute('dynamic-body', 'mass:0.3;linearDamping:0.5;angularDamping:0.5');
+            glass.setAttribute('class', 'clickable grabbable');
+            glass.classList.add('water-glass');
+            glass.id = `glass-${Date.now()}`;
+            glass.dataset.isWater = 'true';
+
+            // Blue water indicator inside the cup - adjusted for 0.6 scale
+            var waterMark = document.createElement('a-sphere');
+            waterMark.setAttribute('radius', '0.08'); // Larger to fill the cup
+            waterMark.setAttribute('color', '#74b9ff');
+            waterMark.setAttribute('opacity', '0.8');
+            waterMark.setAttribute('position', '0 0.08 0'); // Slightly lower to fix gap
+            glass.appendChild(waterMark);
+
+            glass.addEventListener('collide', (e) => {
+                const collidedEl = e.detail.body.el;
+                if (!collidedEl) return;
+                if (collidedEl.classList.contains('customer')) {
+                    console.log('🥤 WATER HIT CUSTOMER!');
+                    if (typeof deliverCoffee === 'function') {
+                        deliverCoffee(collidedEl, glass);
+                    }
+                }
+            });
+
+            sceneEl.appendChild(glass);
+            spawnedObjects.push(glass);
+
+            console.log('🥤 Water glass spawned at:', glassPos);
+            if (debugEl) debugEl.textContent = '🥤 Water ready!';
+        }
+
+        // --- SINK INTERACTION ---
+        function handleSinkClick(sinkEntity) {
+            if (sinkLock) return;
+            sinkLock = true;
+
+            console.log('🥤 Sink activated!');
+            if (debugEl) debugEl.textContent = '🥤 Filling glass...';
+
+            setTimeout(() => {
+                spawnGlass(sinkEntity);
+                sinkLock = false;
+            }, 200);
         }
 
         // --- TRASHCAN DELETION SYSTEM ---
@@ -311,7 +400,6 @@ window.addEventListener('load', () => {
         const TRASH_RADIUS = 0.4; // Rayon de détection élargi (0.2 -> 0.4)
         let giveCoffeeLock = false; // Lock pour donner le café
         var bgMusic = null; // Musique de fond
-        var dollarCubeEl = null; // Cube vert pre-cree (billet)
 
         function removeObjectFromScene(objEl) {
             if (!objEl || !objEl.parentNode) return;
@@ -548,12 +636,23 @@ window.addEventListener('load', () => {
             const title = document.createElement('a-text');
             title.setAttribute('value', 'VR STORE');
             title.setAttribute('align', 'center');
-            title.setAttribute('position', '0 0.55 0.03'); // Top
-            title.setAttribute('width', '4');
+            title.setAttribute('position', '-0.25 0.55 0.03');
+            title.setAttribute('width', '3.5');
             title.setAttribute('color', '#ffffff');
             title.setAttribute('font', 'mozillavr');
             title.setAttribute('letter-spacing', '2');
             menu.appendChild(title);
+
+            // Wallet balance display
+            const walletText = document.createElement('a-text');
+            walletText.setAttribute('value', '$' + totalEarnings);
+            walletText.setAttribute('align', 'center');
+            walletText.setAttribute('position', '0.45 0.55 0.03');
+            walletText.setAttribute('width', '3');
+            walletText.setAttribute('color', '#00b894');
+            walletText.setAttribute('font', 'mozillavr');
+            walletText.id = 'shop-wallet';
+            menu.appendChild(walletText);
 
             // Decorative Line
             const line = document.createElement('a-plane');
@@ -567,19 +666,20 @@ window.addEventListener('load', () => {
             // menuScale = taille dans le menu HUD (petit pour l'aperçu)
             // spawnScale = taille réelle dans la scène 3D
             const items = [
-                // Row 1: Primitives + Basics
-                { type: 'gltf', model: 'models/CoffeeMachine.glb', color: '#fab1a0', label: 'COFFEE', menuScale: '0.2 0.2 0.2', spawnScale: '0.4 0.4 0.4' },
-                { type: 'gltf', model: 'models/TrashcanSmall.glb', color: '#a29bfe', label: 'TRASH', menuScale: '0.2 0.2 0.2', spawnScale: '0.8 0.8 0.8' },
-                // Row 2 
-                { type: 'gltf', label: 'SPEAKER', model: 'models/BassSpeakers.glb', color: '#fff', menuScale: '0.1 0.1 0.1', spawnScale: '0.8 0.8 0.8' },
-                { type: 'gltf', label: 'BROOM', model: 'models/Broom.glb', color: '#fff', menuScale: '0.001 0.001 0.001', spawnScale: '0.004 0.004 0.004' },
-                { type: 'gltf', label: 'REGISTER', model: 'models/Cashregister.glb', color: '#fff', menuScale: '0.007 0.007 0.007', spawnScale: '0.03 0.03 0.03' },
-                { type: 'gltf', label: 'DUSTPAN', model: 'models/DustPan.glb', color: '#fff', menuScale: '0.08 0.08 0.08', spawnScale: '0.25 0.25 0.25' },
-                // Row 3
-                { type: 'gltf', label: 'SIGN', model: 'models/Coffeesign.glb', color: '#fff', menuScale: '0.04 0.04 0.04', spawnScale: '0.2 0.2 0.2' },
-                { type: 'gltf', label: 'COUCH', model: 'models/Couch.glb', color: '#fff', menuScale: '0.08 0.08 0.08', spawnScale: '0.3 0.3 0.3' },
-                { type: 'gltf', label: 'PLANT', model: 'models/Houseplant.glb', color: '#fff', menuScale: '0.1 0.1 0.1', spawnScale: '0.4 0.4 0.4' },
-                { type: 'gltf', label: 'RUG', model: 'models/Rug.glb', color: '#fff', menuScale: '0.05 0.05 0.05', spawnScale: '0.4 0.4 0.4' }
+                // Row 1: Essentials (FREE)
+                { type: 'gltf', model: 'models/CoffeeMachine.glb', color: '#fab1a0', label: 'COFFEE', menuScale: '0.2 0.2 0.2', spawnScale: '0.4 0.4 0.4', price: 0 },
+                { type: 'gltf', model: 'models/TrashcanSmall.glb', color: '#a29bfe', label: 'TRASH', menuScale: '0.2 0.2 0.2', spawnScale: '0.8 0.8 0.8', price: 0 },
+                // Row 2: Tools + Register (FREE)
+                { type: 'gltf', label: 'SPEAKER', model: 'models/BassSpeakers.glb', color: '#fff', menuScale: '0.1 0.1 0.1', spawnScale: '0.8 0.8 0.8', price: 20 },
+                { type: 'gltf', label: 'BROOM', model: 'models/Broom.glb', color: '#fff', menuScale: '0.001 0.001 0.001', spawnScale: '0.004 0.004 0.004', price: 0 },
+                { type: 'gltf', label: 'REGISTER', model: 'models/Cashregister.glb', color: '#fff', menuScale: '0.007 0.007 0.007', spawnScale: '0.03 0.03 0.03', price: 0 },
+                { type: 'gltf', label: 'DUSTPAN', model: 'models/DustPan.glb', color: '#fff', menuScale: '0.08 0.08 0.08', spawnScale: '0.25 0.25 0.25', price: 0 },
+                { type: 'gltf', label: 'SINK', model: 'models/Sink.glb', color: '#74b9ff', menuScale: '0.06 0.06 0.06', spawnScale: '0.5 0.5 0.5', price: 0 },
+                // Row 3: Decoration (PAID)
+                { type: 'gltf', label: 'SIGN', model: 'models/Coffeesign.glb', color: '#fff', menuScale: '0.04 0.04 0.04', spawnScale: '0.2 0.2 0.2', price: 15 },
+                { type: 'gltf', label: 'COUCH', model: 'models/Couch.glb', color: '#fff', menuScale: '0.08 0.08 0.08', spawnScale: '0.3 0.3 0.3', price: 30 },
+                { type: 'gltf', label: 'PLANT', model: 'models/Houseplant.glb', color: '#fff', menuScale: '0.1 0.1 0.1', spawnScale: '0.4 0.4 0.4', price: 10 },
+                { type: 'gltf', label: 'RUG', model: 'models/Rug.glb', color: '#fff', menuScale: '0.05 0.05 0.05', spawnScale: '0.4 0.4 0.4', price: 10 }
             ];
 
             const gap = 0.35;
@@ -610,8 +710,9 @@ window.addEventListener('load', () => {
                 // Spawn Data
                 btn.dataset.spawnType = item.type;
                 btn.dataset.spawnColor = item.color;
+                btn.dataset.spawnPrice = item.price.toString();
                 if (item.model) btn.dataset.spawnModel = item.model;
-                if (item.spawnScale) btn.dataset.spawnScale = item.spawnScale; // Taille de spawn
+                if (item.spawnScale) btn.dataset.spawnScale = item.spawnScale;
 
                 // Hover Effects
                 btn.addEventListener('mouseenter', () => {
@@ -651,10 +752,20 @@ window.addEventListener('load', () => {
                 const label = document.createElement('a-text');
                 label.setAttribute('value', item.label);
                 label.setAttribute('align', 'center');
-                label.setAttribute('position', '0 -0.11 0.06');
+                label.setAttribute('position', '0 -0.09 0.06');
                 label.setAttribute('width', '1.4');
                 label.setAttribute('color', '#dfe6e9');
                 btnGroup.appendChild(label);
+
+                // PRICE TAG
+                const priceTag = document.createElement('a-text');
+                priceTag.setAttribute('value', item.price === 0 ? 'FREE' : '$' + item.price);
+                priceTag.setAttribute('align', 'center');
+                priceTag.setAttribute('position', '0 -0.14 0.06');
+                priceTag.setAttribute('width', '1.2');
+                priceTag.setAttribute('color', item.price === 0 ? '#00b894' : '#fdcb6e');
+                priceTag.setAttribute('font', 'mozillavr');
+                btnGroup.appendChild(priceTag);
 
                 menu.appendChild(btnGroup);
             });
@@ -824,9 +935,9 @@ window.addEventListener('load', () => {
                     sceneEl.object3D.add(ctrl1);
 
                     ctrl0.addEventListener('selectstart', () => grab(ctrl0));
-                    ctrl0.addEventListener('selectend', release);
+                    ctrl0.addEventListener('selectend', () => release(ctrl0));
                     ctrl1.addEventListener('selectstart', () => grab(ctrl1));
-                    ctrl1.addEventListener('selectend', release);
+                    ctrl1.addEventListener('selectend', () => release(ctrl1));
 
                     // CREATE WELCOME PANEL FIRST
                     createWelcomePanel();
@@ -985,6 +1096,11 @@ window.addEventListener('load', () => {
                                 if (inventoryEntity) {
                                     const vis = inventoryEntity.getAttribute('visible');
                                     inventoryEntity.setAttribute('visible', !vis);
+                                    // Update wallet balance when opening shop
+                                    if (!vis) {
+                                        var walletEl = document.getElementById('shop-wallet');
+                                        if (walletEl) walletEl.setAttribute('value', '$' + totalEarnings);
+                                    }
                                     console.log('Toggle Menu:', !vis);
                                 }
                             }
@@ -1010,13 +1126,15 @@ window.addEventListener('load', () => {
                         }
                     }
 
-                    // RIGHT CONTROLLER - Button B = Coffee Machine Interaction
+                    // RIGHT CONTROLLER - Button B = Coffee Machine / Sink Interaction
                     if (source.handedness === 'right' && source.gamepad) {
-                        // Button 5 is usually 'B' on Quest
+                        // Button 5 is usually 'B' on Quest, also try button 4 (A)
                         const bBtn = source.gamepad.buttons[5];
+                        const aBtn2 = source.gamepad.buttons[4];
+                        const interactBtn = (bBtn && bBtn.pressed) ? bBtn : ((aBtn2 && aBtn2.pressed) ? aBtn2 : null);
 
-                        if (bBtn && bBtn.pressed && !coffeeMachineLock) {
-                            // Raycast from right controller to detect coffee machine
+                        if (interactBtn && interactBtn.pressed && !coffeeMachineLock && !sinkLock) {
+                            // Raycast from right controller to detect coffee machine or sink
                             const rightCtrl = window.rightController;
                             if (rightCtrl) {
                                 const tempMatrix = new THREE.Matrix4();
@@ -1025,31 +1143,67 @@ window.addEventListener('load', () => {
                                 const raycaster = new THREE.Raycaster();
                                 raycaster.ray.origin.setFromMatrixPosition(rightCtrl.matrixWorld);
                                 raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-                                raycaster.far = 5.0; // 5 mètres de portée
+                                raycaster.far = 5.0;
 
-                                // Find all coffee machines in spawnedObjects
-                                const coffeeMachines = [];
+                                // Find all coffee machines AND sinks
+                                const interactables = [];
                                 spawnedObjects.forEach(obj => {
                                     if (obj && obj.object3D) {
-                                        // Check if it's a coffee machine (by gltf-model attribute)
                                         const model = obj.getAttribute('gltf-model');
-                                        if (model && model.includes('CoffeeMachine')) {
+                                        if (model && (model.includes('CoffeeMachine') || model.includes('Sink'))) {
                                             obj.object3D.traverse(child => {
                                                 if (child.isMesh) {
-                                                    child.el = obj; // Reference to A-Frame entity
-                                                    coffeeMachines.push(child);
+                                                    child.el = obj;
+                                                    interactables.push(child);
                                                 }
                                             });
                                         }
                                     }
                                 });
 
-                                const intersects = raycaster.intersectObjects(coffeeMachines);
+                                console.log('🔍 B pressed: interactables found:', interactables.length);
+
+                                const intersects = raycaster.intersectObjects(interactables);
 
                                 if (intersects.length > 0) {
                                     const hitEntity = intersects[0].object.el;
                                     if (hitEntity) {
-                                        handleCoffeeMachineClick(hitEntity);
+                                        const hitModel = hitEntity.getAttribute('gltf-model');
+                                        console.log('🎯 Hit:', hitModel);
+                                        if (hitModel && hitModel.includes('Sink')) {
+                                            handleSinkClick(hitEntity);
+                                        } else {
+                                            handleCoffeeMachineClick(hitEntity);
+                                        }
+                                    }
+                                } else {
+                                    // FALLBACK: proximity check if raycast missed
+                                    const ctrlPos = new THREE.Vector3();
+                                    rightCtrl.getWorldPosition(ctrlPos);
+                                    var closestMachine = null;
+                                    var closestDist = 2.0; // 2m proximity
+                                    spawnedObjects.forEach(obj => {
+                                        if (obj && obj.object3D) {
+                                            const model = obj.getAttribute('gltf-model');
+                                            if (model && (model.includes('CoffeeMachine') || model.includes('Sink'))) {
+                                                const objPos = new THREE.Vector3();
+                                                obj.object3D.getWorldPosition(objPos);
+                                                const d = ctrlPos.distanceTo(objPos);
+                                                if (d < closestDist) {
+                                                    closestDist = d;
+                                                    closestMachine = obj;
+                                                }
+                                            }
+                                        }
+                                    });
+                                    if (closestMachine) {
+                                        const hitModel = closestMachine.getAttribute('gltf-model');
+                                        console.log('📍 Proximity hit:', hitModel, 'dist:', closestDist.toFixed(2));
+                                        if (hitModel && hitModel.includes('Sink')) {
+                                            handleSinkClick(closestMachine);
+                                        } else {
+                                            handleCoffeeMachineClick(closestMachine);
+                                        }
                                     }
                                 }
                             }
@@ -1180,15 +1334,33 @@ window.addEventListener('load', () => {
                         }
                         // Otherwise it's a spawn button
                         else if (el.dataset.spawnType) {
-                            console.log('SPAWN COMMAND (Left/Right) for', el.dataset.spawnType);
-                            el.setAttribute('color', '#00cec9');
+                            var price = parseInt(el.dataset.spawnPrice) || 0;
 
-                            // FORCE RELEASE to prevent "Head Tracking" glitch
-                            if (window.grabbed) {
-                                release();
+                            // CHECK FUNDS
+                            if (price > 0 && totalEarnings < price) {
+                                showARNotification('Not enough money! Need $' + price + ' (Have $' + totalEarnings + ')', 2500);
+                                el.setAttribute('color', '#d63031'); // Red flash
+                                setTimeout(function () { el.setAttribute('color', '#2d3436'); }, 500);
+                            } else {
+                                // DEDUCT MONEY
+                                if (price > 0) {
+                                    totalEarnings -= price;
+                                    showARNotification('-$' + price + ' | Wallet: $' + totalEarnings, 2000);
+                                }
+                                // Update wallet display in shop
+                                var walletEl = document.getElementById('shop-wallet');
+                                if (walletEl) walletEl.setAttribute('value', '$' + totalEarnings);
+                                updateTutorialUI();
+
+                                el.setAttribute('color', '#00cec9');
+
+                                // FORCE RELEASE to prevent "Head Tracking" glitch
+                                if (window.grabbed) {
+                                    release();
+                                }
+
+                                spawnObject(el.dataset.spawnType, el.dataset.spawnColor, el.dataset.spawnModel, el.dataset.spawnScale);
                             }
-
-                            spawnObject(el.dataset.spawnType, el.dataset.spawnColor, el.dataset.spawnModel, el.dataset.spawnScale);
                         }
                     }
 
@@ -1204,33 +1376,44 @@ window.addEventListener('load', () => {
             handleControllerInteraction(window.rightController);
             handleControllerInteraction(window.leftController);
 
-            // Objet attrapé suit le controller
-            if (grabbed && grabController && currentGrabbedEl) {
+            // All grabbed objects follow their controllers
+            var grabKeys = Object.keys(grabs);
+            for (var gi = 0; gi < grabKeys.length; gi++) {
+                var g = grabs[grabKeys[gi]];
+                if (!g || !g.controller || !g.el) continue;
                 try {
                     const pos = new THREE.Vector3();
-                    grabController.getWorldPosition(pos);
+                    g.controller.getWorldPosition(pos);
 
                     if (isFinite(pos.x) && isFinite(pos.y) && isFinite(pos.z)) {
-                        currentGrabbedEl.object3D.position.set(pos.x, pos.y, pos.z);
+                        g.el.object3D.position.set(pos.x, pos.y, pos.z);
 
                         // SPECIAL CASE: BROOM OFFSET
-                        // Grab by the handle (middle) instead of bottom
-                        const model = currentGrabbedEl.getAttribute('gltf-model');
+                        const model = g.el.getAttribute('gltf-model');
                         if (model && model.includes('Broom')) {
-                            // Move the broom down relative to its own rotation so the hand is higher up the stick
-                            // Adjust this value based on visual preference (e.g., 0.5m)
-                            currentGrabbedEl.object3D.translateY(-0.6);
+                            g.el.object3D.translateY(-0.6);
                         }
 
-                        if (currentGrabbedEl.body) {
-                            const p = currentGrabbedEl.object3D.position;
-                            currentGrabbedEl.body.position.set(p.x, p.y, p.z);
+                        if (g.el.body) {
+                            const p = g.el.object3D.position;
+                            g.el.body.position.set(p.x, p.y, p.z);
                         }
 
-                        velocities.push({ x: pos.x, y: pos.y, z: pos.z, t: performance.now() });
-                        if (velocities.length > 10) velocities.shift();
+                        g.velocities.push({ x: pos.x, y: pos.y, z: pos.z, t: performance.now() });
+                        if (g.velocities.length > 10) g.velocities.shift();
                     }
                 } catch (e) { }
+            }
+            // Update legacy aliases for compatibility
+            var firstKey = grabKeys.length > 0 ? grabKeys[0] : null;
+            if (firstKey && grabs[firstKey]) {
+                grabbed = true;
+                grabController = grabs[firstKey].controller;
+                currentGrabbedEl = grabs[firstKey].el;
+            } else {
+                grabbed = false;
+                grabController = null;
+                currentGrabbedEl = null;
             }
         }
 
@@ -1240,19 +1423,30 @@ window.addEventListener('load', () => {
         // I am replacing from line 41 to 609, so I am including them.
 
         function grab(controller) {
-            if (grabbed) return;
+            // Check if this controller already grabs something
+            var ctrlId = controller.uuid || controller.id || ('ctrl' + (grabIdCounter++));
+            if (!controller._grabId) controller._grabId = ctrlId;
+            ctrlId = controller._grabId;
+            if (grabs[ctrlId]) return; // Already grabbing
 
             // Get controller position
             const ctrlPos = new THREE.Vector3();
             controller.getWorldPosition(ctrlPos);
 
-            // Find the closest grabbable object
+            // Find the closest grabbable object not already grabbed by another hand
+            var alreadyGrabbed = {};
+            var gKeys = Object.keys(grabs);
+            for (var i = 0; i < gKeys.length; i++) {
+                if (grabs[gKeys[i]] && grabs[gKeys[i]].el) alreadyGrabbed[grabs[gKeys[i]].el.id] = true;
+            }
+
             const allGrabbables = [cubeEl, ...spawnedObjects];
             let closestEl = null;
-            let closestDist = 0.5; // Max grab distance
+            let closestDist = 0.5;
 
             allGrabbables.forEach(el => {
                 if (!el || !el.object3D) return;
+                if (alreadyGrabbed[el.id]) return; // Already held by other hand
                 const objPos = new THREE.Vector3();
                 el.object3D.getWorldPosition(objPos);
                 const dist = ctrlPos.distanceTo(objPos);
@@ -1262,39 +1456,33 @@ window.addEventListener('load', () => {
                 }
             });
 
-            if (!closestEl) {
-                if (debugEl) debugEl.textContent = 'Rien à attraper';
-                return;
-            }
+            if (!closestEl) return;
 
             if (debugEl) debugEl.textContent = 'GRAB!';
 
-            grabbed = true;
-            grabController = controller;
-            currentGrabbedEl = closestEl;
-            velocities = [];
+            closestEl._originalColor = closestEl.getAttribute('color');
+            closestEl.setAttribute('color', '#FFD700');
 
-            // Store original color
-            currentGrabbedEl._originalColor = currentGrabbedEl.getAttribute('color');
-            currentGrabbedEl.setAttribute('color', '#FFD700');
-
-            if (currentGrabbedEl.body) {
-                currentGrabbedEl.body.mass = 0;
-                currentGrabbedEl.body.type = 2; // Kinematic
-                currentGrabbedEl.body.collisionResponse = false; // Désactiver les collisions pendant le grab
-                currentGrabbedEl.body.updateMassProperties();
+            if (closestEl.body) {
+                closestEl.body.mass = 0;
+                closestEl.body.type = 2;
+                closestEl.body.collisionResponse = false;
+                closestEl.body.updateMassProperties();
             }
 
-            if (debugEl) debugEl.textContent = 'ATTRAPÉ!';
+            grabs[ctrlId] = { controller: controller, el: closestEl, velocities: [] };
         }
 
-        function release() {
-            if (!grabbed || !currentGrabbedEl) return;
+        function release(controller) {
+            var ctrlId = controller._grabId;
+            if (!ctrlId || !grabs[ctrlId]) return;
+            var g = grabs[ctrlId];
+            var el = g.el;
 
             let vx = 0, vy = 0, vz = 0;
-            if (velocities.length >= 2) {
-                const l = velocities[velocities.length - 1];
-                const f = velocities[0];
+            if (g.velocities.length >= 2) {
+                const l = g.velocities[g.velocities.length - 1];
+                const f = g.velocities[0];
                 const dt = (l.t - f.t) / 1000;
                 if (dt > 0.01) {
                     vx = (l.x - f.x) / dt;
@@ -1303,24 +1491,21 @@ window.addEventListener('load', () => {
                 }
             }
 
-            // Restore original color
-            const originalColor = currentGrabbedEl._originalColor || '#8A2BE2';
-            currentGrabbedEl.setAttribute('color', originalColor);
+            const originalColor = el._originalColor || '#8A2BE2';
+            el.setAttribute('color', originalColor);
 
-            if (currentGrabbedEl.body) {
-                const p = currentGrabbedEl.object3D.position;
-                currentGrabbedEl.body.position.set(p.x, p.y, p.z);
-                currentGrabbedEl.body.type = 1; // Dynamic
-                currentGrabbedEl.body.collisionResponse = true; // Réactiver les collisions
-                currentGrabbedEl.body.mass = 0.3; // Masse pour les objets café
-                currentGrabbedEl.body.updateMassProperties();
-                currentGrabbedEl.body.velocity.set(vx, vy, vz);
-                currentGrabbedEl.body.wakeUp();
+            if (el.body) {
+                const p = el.object3D.position;
+                el.body.position.set(p.x, p.y, p.z);
+                el.body.type = 1;
+                el.body.collisionResponse = true;
+                el.body.mass = 0.3;
+                el.body.updateMassProperties();
+                el.body.velocity.set(vx, vy, vz);
+                el.body.wakeUp();
             }
 
-            grabbed = false;
-            grabController = null;
-            currentGrabbedEl = null;
+            delete grabs[ctrlId];
             if (debugEl) debugEl.textContent = 'Lâché!';
         }
 
@@ -1417,6 +1602,7 @@ window.addEventListener('load', () => {
                         stains.splice(i, 1);
 
                         if (debugEl) debugEl.textContent = 'Tache nettoyée !';
+                        try { var broomCleanSfx = new Audio('sounds/broom.mp3'); broomCleanSfx.volume = 0.6; broomCleanSfx.play(); } catch (e) { }
                     }
                 }
             }
@@ -1476,31 +1662,120 @@ window.addEventListener('load', () => {
         // --- CUSTOMER SYSTEM ---
         const customers = [];
 
+        // Get queue position based on camera direction
+        // Queue extends AWAY from camera through SERVICE_POS
+        function getQueuePosition(queueIndex) {
+            var cam = sceneEl.camera;
+            var cx = 0, cz = 0;
+            if (cam) {
+                var camPos = new THREE.Vector3();
+                cam.getWorldPosition(camPos);
+                cx = camPos.x;
+                cz = camPos.z;
+            }
+            // Direction from camera to service position
+            var dx = SERVICE_POS.x - cx;
+            var dz = SERVICE_POS.z - cz;
+            var len = Math.sqrt(dx * dx + dz * dz);
+            if (len < 0.01) { dx = 0; dz = -1; len = 1; } // fallback
+            dx /= len;
+            dz /= len;
+            // Service position = index 0, queue extends further along this direction
+            var dist = QUEUE_SPACING * (queueIndex + 1);
+            return {
+                x: SERVICE_POS.x + dx * dist,
+                z: SERVICE_POS.z + dz * dist
+            };
+        }
+
         // Create a single customer entity
         function createCustomer(queueIndex) {
-            var models = ['models/Punk.glb'];
-            var randomModel = models[Math.floor(Math.random() * models.length)];
-            var numCoffees = Math.floor(Math.random() * 3) + 1; // 1-3 coffees
+            // All Poly Pizza character models (same scale/animations)
+            var customerModels = [
+                'models/Punk.glb',
+                'models/Adventurer.glb',
+                'models/BeachCharacter.glb',
+                'models/BusinessMan.glb',
+                'models/CasualCharacter.glb',
+                'models/DressWoman.glb',
+                'models/HoodieCharacter.glb',
+                'models/PantWoman.glb',
+                'models/SuitWoman.glb',
+                'models/Worker.glb'
+            ];
+            var randomModel = customerModels[Math.floor(Math.random() * customerModels.length)];
+            var numCoffees = Math.floor(Math.random() * 2) + 1; // 1-2 items total
+
+            // Randomize each item: coffee or water
+            var orderTypes = [];
+            var coffeeCount = 0;
+            var waterCount = 0;
+            for (var oi = 0; oi < numCoffees; oi++) {
+                if (Math.random() < 0.6) {
+                    orderTypes.push('coffee');
+                    coffeeCount++;
+                } else {
+                    orderTypes.push('water');
+                    waterCount++;
+                }
+            }
 
             var customer = document.createElement('a-entity');
             customer.setAttribute('gltf-model', 'url(' + randomModel + ')');
-            var qz = QUEUE_START_Z - (queueIndex * QUEUE_SPACING);
-            customer.setAttribute('position', SERVICE_POS.x + ' 0 ' + qz);
+            var qPos = getQueuePosition(queueIndex);
+            customer.setAttribute('position', qPos.x + ' 0 ' + qPos.z);
             customer.setAttribute('scale', '1 1 1');
             customer.setAttribute('rotation', '0 0 0');
             customer.classList.add('customer');
             customer.id = 'customer-' + Date.now() + '-' + queueIndex;
+            customer._posY = 0;
 
-            // Order text above head
+            // Start with Idle animation (Walk only during movement)
+            customer.setAttribute('animation-mixer', 'clip: *Idle; loop: repeat');
+
+            // Make customer face the camera
+            customer.setAttribute('face-camera', '');
+
+            // Comic speech bubble above head
+            var bubble = document.createElement('a-entity');
+            bubble.setAttribute('position', '0 2.5 0.3');
+
+            // Build order message
+            var orderParts = [];
+            if (coffeeCount > 0) orderParts.push(coffeeCount + ' Coffee' + (coffeeCount > 1 ? 's' : ''));
+            if (waterCount > 0) orderParts.push(waterCount + ' Water');
+            var orderMsg = orderParts.join(' + ') + '!';
+            var bubbleW = Math.max(1.0, orderMsg.length * 0.1 + 0.4);
+            var bg = document.createElement('a-plane');
+            bg.setAttribute('width', '' + bubbleW);
+            bg.setAttribute('height', '0.4');
+            bg.setAttribute('color', '#FFFFFF');
+            bg.setAttribute('material', 'shader: flat; opacity: 0.95');
+            bubble.appendChild(bg);
+
+            // Bubble tail (small triangle pointing down)
+            var tail = document.createElement('a-triangle');
+            tail.setAttribute('vertex-a', '0.1 -0.2 0');
+            tail.setAttribute('vertex-b', '-0.1 -0.2 0');
+            tail.setAttribute('vertex-c', '0 -0.38 0');
+            tail.setAttribute('color', '#FFFFFF');
+            tail.setAttribute('material', 'shader: flat; side: double');
+            bubble.appendChild(tail);
+
+            // Order text inside bubble
             var text = document.createElement('a-text');
-            text.setAttribute('value', numCoffees + ' Coffee' + (numCoffees > 1 ? 's' : '') + ' please!');
+            text.setAttribute('value', orderMsg);
             text.setAttribute('align', 'center');
-            text.setAttribute('position', '0 2.2 0.3');
-            text.setAttribute('scale', '1 1 1');
-            text.setAttribute('color', '#FFD700');
+            text.setAttribute('position', '0 0.05 0.01');
+            text.setAttribute('scale', '0.8 0.8 0.8');
+            text.setAttribute('color', '#333333');
             text.setAttribute('font', 'mozillavr');
-            customer.appendChild(text);
+            bubble.appendChild(text);
+
+            customer.appendChild(bubble);
             customer._orderText = text;
+            customer._bubbleBg = bg;
+            customer._bubble = bubble;
 
             // Green circle on floor
             var circle = document.createElement('a-ring');
@@ -1509,13 +1784,40 @@ window.addEventListener('load', () => {
             circle.setAttribute('color', '#00ff00');
             circle.setAttribute('rotation', '-90 0 0');
             circle.setAttribute('position', '0 0.02 0');
-            circle.setAttribute('visible', 'false'); // Only visible when being served
+            circle.setAttribute('visible', 'false');
             customer.appendChild(circle);
             customer._circle = circle;
 
+            // Patience bar (above bubble, hidden until active)
+            var patienceBar = document.createElement('a-plane');
+            patienceBar.setAttribute('width', '1.0');
+            patienceBar.setAttribute('height', '0.08');
+            patienceBar.setAttribute('color', '#00cc00');
+            patienceBar.setAttribute('material', 'shader: flat');
+            patienceBar.setAttribute('position', '0 2.95 0.3');
+            patienceBar.setAttribute('visible', 'false');
+            customer.appendChild(patienceBar);
+
+            // Patience bar background (dark)
+            var patienceBg = document.createElement('a-plane');
+            patienceBg.setAttribute('width', '1.04');
+            patienceBg.setAttribute('height', '0.12');
+            patienceBg.setAttribute('color', '#333333');
+            patienceBg.setAttribute('material', 'shader: flat');
+            patienceBg.setAttribute('position', '0 2.95 0.29');
+            patienceBg.setAttribute('visible', 'false');
+            customer.appendChild(patienceBg);
+
             customer._coffees = numCoffees;
+            customer._orderTypes = orderTypes; // ['coffee', 'water', ...]
             customer._delivered = false;
             customer._queueIndex = queueIndex;
+            customer._patience = 100;
+            customer._maxPatienceDuration = PATIENCE_DURATION_MIN + Math.random() * (PATIENCE_DURATION_MAX - PATIENCE_DURATION_MIN);
+            customer._patienceActive = false;
+            customer._patienceBar = patienceBar;
+            customer._patienceBg = patienceBg;
+            customer._patienceTimer = null;
 
             sceneEl.appendChild(customer);
             return customer;
@@ -1530,7 +1832,7 @@ window.addEventListener('load', () => {
             customer.setAttribute('position', SERVICE_POS.x + ' 0 ' + SERVICE_POS.z);
             customer._circle.setAttribute('visible', 'true');
             customer._coffees = 1; // Tutorial: always 1 coffee
-            customer._orderText.setAttribute('value', '1 Coffee please!');
+            customer._orderText.setAttribute('value', '1 Coffee!');
             customers.push(customer);
             showARNotification('New Customer!', 2000);
         }
@@ -1545,37 +1847,223 @@ window.addEventListener('load', () => {
                 if (debugEl) debugEl.textContent = 'GAME MODE STARTING...';
                 showARNotification('Cafe is OPEN! Serve customers!', 4000);
                 if (tutorialUI) tutorialUI.setAttribute('visible', 'true');
-                spawnCustomerQueue();
+                scheduleNextEvent(3000); // First event after 3s
             } catch (e) {
                 if (debugEl) debugEl.textContent = 'GAME START ERR: ' + e.message;
                 console.error('startGameMode error:', e);
             }
         }
 
-        // Spawn a queue of 3 customers
-        function spawnCustomerQueue() {
+        // --- EVENT SCHEDULER ---
+        function scheduleNextEvent(delay) {
             if (!gameMode) return;
-            try {
-                // Clear old queue
-                for (var i = customerQueue.length - 1; i >= 0; i--) {
-                    removeCustomerClean(customerQueue[i]);
-                }
-                customerQueue = [];
-                activeCustomer = null;
+            if (gameEventTimer) clearTimeout(gameEventTimer);
+            var d = delay || (10000 + Math.random() * 15000); // 10-25s between events
+            gameEventTimer = setTimeout(function () {
+                if (!gameMode) return;
+                triggerRandomEvent();
+            }, d);
+        }
 
-                // Create 3 customers in a line
-                for (var q = 0; q < 3; q++) {
-                    var c = createCustomer(q);
-                    customerQueue.push(c);
-                }
-                if (debugEl) debugEl.textContent = 'Queue: ' + customerQueue.length + ' customers';
-
-                // Advance first customer
-                advanceQueue();
-            } catch (e) {
-                if (debugEl) debugEl.textContent = 'QUEUE ERR: ' + e.message;
-                console.error('spawnCustomerQueue error:', e);
+        function triggerRandomEvent() {
+            var roll = Math.random();
+            if (roll < 0.15) {
+                // 15%: calm period — nothing happens, just schedule next
+                scheduleNextEvent();
+                return;
+            } else if (roll < 0.55) {
+                // 40%: 1-2 customers arrive one by one
+                var count = Math.floor(Math.random() * 2) + 1;
+                spawnCustomersGradually(count, 0);
+            } else if (roll < 0.80) {
+                // 25%: 1-2 stains appear
+                var numStains = Math.floor(Math.random() * 2) + 1;
+                for (var s = 0; s < numStains; s++) spawnRandomStain();
+                showARNotification('Coffee spill! Clean it up!', 3000);
+                try { var broomSfx = new Audio('sounds/broom.mp3'); broomSfx.volume = 0.5; broomSfx.play(); } catch (e) { }
+                scheduleNextEvent(); // Schedule next event
+            } else {
+                // 20%: rush — 3-4 customers arrive fast
+                var rushCount = Math.floor(Math.random() * 2) + 3;
+                showARNotification('RUSH HOUR! ' + rushCount + ' customers incoming!', 3000);
+                spawnCustomersGradually(rushCount, 0);
             }
+        }
+
+        // Spawn customers one by one with delays
+        function spawnCustomersGradually(remaining, index) {
+            if (!gameMode || remaining <= 0) {
+                scheduleNextEvent(); // Schedule next event after all spawned
+                return;
+            }
+            // Cap queue at 4 customers max
+            if (customerQueue.length >= 4) {
+                scheduleNextEvent();
+                return;
+            }
+            var queuePos = customerQueue.length;
+            var c = createCustomer(queuePos);
+            customerQueue.push(c);
+
+            // If no active customer, advance the queue
+            if (!activeCustomer) {
+                advanceQueue();
+            } else {
+                // Walk new customer to their queue position
+                var qPos = getQueuePosition(queuePos - 1);
+                var dest = qPos.x + ' 0 ' + qPos.z;
+                walkCustomerTo(c, dest, 2500, null);
+            }
+
+            if (debugEl) debugEl.textContent = 'Queue: ' + customerQueue.length + ' customers';
+
+            // Spawn next customer after 3-5s delay
+            if (remaining > 1) {
+                var nextDelay = 3000 + Math.random() * 2000;
+                setTimeout(function () {
+                    spawnCustomersGradually(remaining - 1, index + 1);
+                }, nextDelay);
+            } else {
+                scheduleNextEvent(); // All spawned, schedule next event
+            }
+        }
+
+        // --- PATIENCE SYSTEM ---
+        function startPatienceTimer(customer) {
+            if (!customer || customer._patienceActive) return;
+            customer._patienceActive = true;
+            customer._patience = 100;
+
+            // Show patience bar
+            if (customer._patienceBar) customer._patienceBar.setAttribute('visible', 'true');
+            if (customer._patienceBg) customer._patienceBg.setAttribute('visible', 'true');
+
+            var tickRate = 200; // Update every 200ms
+            var decrementPerTick = (100 / (customer._maxPatienceDuration / tickRate));
+
+            customer._patienceTimer = setInterval(function () {
+                if (!customer || !customer.parentNode) {
+                    stopPatienceTimer(customer);
+                    return;
+                }
+                customer._patience -= decrementPerTick;
+                if (customer._patience < 0) customer._patience = 0;
+
+                // Update bar width and color
+                var pct = customer._patience / 100;
+                var barWidth = pct * 1.0;
+                if (customer._patienceBar) {
+                    customer._patienceBar.setAttribute('width', '' + Math.max(0.01, barWidth));
+                    // Green → Yellow → Red
+                    var r = Math.min(255, Math.floor(510 * (1 - pct)));
+                    var g = Math.min(255, Math.floor(510 * pct));
+                    var color = '#' + r.toString(16).padStart(2, '0') + g.toString(16).padStart(2, '0') + '00';
+                    customer._patienceBar.setAttribute('color', color);
+                }
+
+                // Out of patience!
+                if (customer._patience <= 0) {
+                    customerLeaveAngry(customer);
+                }
+            }, tickRate);
+        }
+
+        function stopPatienceTimer(customer) {
+            if (!customer) return;
+            customer._patienceActive = false;
+            if (customer._patienceTimer) {
+                clearInterval(customer._patienceTimer);
+                customer._patienceTimer = null;
+            }
+            if (customer._patienceBar) customer._patienceBar.setAttribute('visible', 'false');
+            if (customer._patienceBg) customer._patienceBg.setAttribute('visible', 'false');
+        }
+
+        function customerLeaveAngry(customer) {
+            stopPatienceTimer(customer);
+
+            // Play angry sound
+            try { var angrySfx = new Audio('sounds/angry.mp3'); angrySfx.volume = 0.8; angrySfx.play(); } catch (e) { }
+
+            // Penalty
+            totalEarnings = Math.max(0, totalEarnings - PATIENCE_PENALTY);
+            showARNotification('Customer left angry! -$' + PATIENCE_PENALTY, 3000);
+
+            // Update bubble text angrily
+            if (customer._orderText) customer._orderText.setAttribute('value', 'Too slow!');
+            if (customer._bubbleBg) customer._bubbleBg.setAttribute('color', '#FF4444');
+
+            // Walk customer away to the SIDE then away (not through queue)
+            var cam = sceneEl.camera;
+            var awayX = 0, awayZ = -5;
+            if (cam) {
+                var camPos = new THREE.Vector3();
+                cam.getWorldPosition(camPos);
+                var cpos = customer.getAttribute('position');
+                var cx = cpos ? cpos.x : 0;
+                var cz = cpos ? cpos.z : 0;
+                // Direction away from camera
+                var dx = cx - camPos.x;
+                var dz = cz - camPos.z;
+                var len = Math.sqrt(dx * dx + dz * dz);
+                if (len > 0.01) { dx /= len; dz /= len; }
+                else { dx = 0; dz = -1; }
+                // Add perpendicular offset to the side (right side)
+                var sideX = -dz * 2; // perpendicular
+                var sideZ = dx * 2;
+                awayX = cx + dx * 4 + sideX;
+                awayZ = cz + dz * 4 + sideZ;
+            }
+
+            // Remove from queue
+            var idx = customerQueue.indexOf(customer);
+            if (idx > -1) customerQueue.splice(idx, 1);
+
+            if (customer === activeCustomer) {
+                activeCustomer = null;
+                coffeesOrdered = 0;
+                coffeesDelivered = 0;
+                billCollected = false;
+            }
+
+            // Remove face-camera and rotate customer to face AWAY from player
+            customer.removeAttribute('face-camera');
+            var cpos2 = customer.getAttribute('position');
+            var cx2 = cpos2 ? cpos2.x : 0;
+            var cz2 = cpos2 ? cpos2.z : 0;
+            var awayAngle = Math.atan2(awayX - cx2, awayZ - cz2) * (180 / Math.PI);
+            customer.setAttribute('rotation', '0 ' + awayAngle + ' 0');
+
+            walkCustomerTo(customer, awayX + ' 0 ' + awayZ, 2000, function () {
+                removeCustomerClean(customer);
+                // Advance queue if there are more customers
+                if (customerQueue.length > 0 && !activeCustomer) {
+                    advanceQueue();
+                }
+                updateTutorialUI();
+            });
+        }
+
+        // Helper: walk a customer to a target position with Walk animation
+        function walkCustomerTo(customer, targetPos, duration, onDone) {
+            // Switch to Walk animation
+            customer.setAttribute('animation-mixer', 'clip: *Walk; loop: repeat');
+
+            // Move position
+            customer.setAttribute('animation', {
+                property: 'position',
+                to: targetPos,
+                dur: duration,
+                easing: 'linear'
+            });
+
+            // When arrived: switch back to Idle
+            setTimeout(function () {
+                if (!customer || !customer.parentNode) return;
+                customer.removeAttribute('animation');
+                customer.setAttribute('animation-mixer', 'clip: *Idle; loop: repeat');
+                if (onDone) onDone();
+            }, duration + 100);
         }
 
         // Move the first customer in queue to service position
@@ -1587,9 +2075,7 @@ window.addEventListener('load', () => {
                     coffeesDelivered = 0;
                     billCollected = false;
                     updateTutorialUI();
-                    setTimeout(function () {
-                        if (gameMode) spawnCustomerQueue();
-                    }, 3000);
+                    // No more customers — events will spawn more naturally
                     return;
                 }
 
@@ -1599,35 +2085,22 @@ window.addEventListener('load', () => {
                 billCollected = false;
                 activeCustomer._delivered = false;
 
-                // Animate active customer sliding to service position
-                var targetPos = SERVICE_POS.x + ' 0 ' + SERVICE_POS.z;
-                activeCustomer.setAttribute('animation', {
-                    property: 'position',
-                    to: targetPos,
-                    dur: 1500,
-                    easing: 'easeInOutQuad'
-                });
-                // Show green circle after animation
+                // Walk active customer to service position
+                var posY = activeCustomer._posY || 0;
+                var targetPos = SERVICE_POS.x + ' ' + posY + ' ' + SERVICE_POS.z;
                 var ac = activeCustomer;
-                setTimeout(function () {
+                walkCustomerTo(ac, targetPos, 2500, function () {
                     if (ac && ac._circle) ac._circle.setAttribute('visible', 'true');
-                    if (ac) ac.removeAttribute('animation');
-                }, 1600);
+                    // Start patience timer when customer arrives at service position
+                    startPatienceTimer(ac);
+                });
 
-                // Animate remaining customers sliding forward in queue
+                // Walk remaining customers forward in queue
                 for (var i = 1; i < customerQueue.length; i++) {
-                    var qz = QUEUE_START_Z - ((i - 1) * QUEUE_SPACING);
-                    var dest = SERVICE_POS.x + ' 0 ' + qz;
-                    customerQueue[i].setAttribute('animation', {
-                        property: 'position',
-                        to: dest,
-                        dur: 2000,
-                        easing: 'easeInOutQuad'
-                    });
-                    // Clean up animation attribute after it finishes
-                    (function (c) {
-                        setTimeout(function () { if (c) c.removeAttribute('animation'); }, 1600);
-                    })(customerQueue[i]);
+                    var cPosY = customerQueue[i]._posY || 0;
+                    var qPos = getQueuePosition(i - 1);
+                    var dest = qPos.x + ' ' + cPosY + ' ' + qPos.z;
+                    walkCustomerTo(customerQueue[i], dest, 2500, null);
                 }
 
                 showARNotification('Customer: ' + coffeesOrdered + ' coffee' + (coffeesOrdered > 1 ? 's' : '') + '!', 3000);
@@ -1640,6 +2113,7 @@ window.addEventListener('load', () => {
 
         function removeCustomerClean(customer) {
             if (!customer) return;
+            stopPatienceTimer(customer); // Clean up patience timer
             var idx = customers.indexOf(customer);
             if (idx > -1) customers.splice(idx, 1);
             customer.setAttribute('visible', 'false');
@@ -1676,12 +2150,47 @@ window.addEventListener('load', () => {
         function deliverCoffee(customer, cupEl) {
             deliveryDebugLock = true;
 
-            // Release grab
+            // Determine delivered item type
+            var deliveredType = 'coffee'; // default
+            if (cupEl.dataset.isWater === 'true' || cupEl.classList.contains('water-glass')) {
+                deliveredType = 'water';
+            }
+
+            // Game Mode: Validate item type
+            if (gameMode && customer === activeCustomer) {
+                // Initialize remaining types if needed
+                if (!customer._remainingTypes && customer._orderTypes) {
+                    customer._remainingTypes = [...customer._orderTypes];
+                }
+
+                if (customer._remainingTypes) {
+                    var typeIdx = customer._remainingTypes.indexOf(deliveredType);
+                    if (typeIdx === -1) {
+                        // WRONG ITEM
+                        showARNotification('Wrong item! I wanted ' + customer._remainingTypes.join(' & '), 3000);
+                        // Still consume the object to avoid physics mess, but don't count it
+                    } else {
+                        // CORRECT ITEM
+                        customer._remainingTypes.splice(typeIdx, 1);
+                        coffeesDelivered++;
+                    }
+                } else {
+                    // Fallback for safety
+                    coffeesDelivered++;
+                }
+            } else if (!gameMode) {
+                // Tutorial mode: just accept
+                customer._delivered = true;
+            }
+
+            // Release grab (find which hand holds this cup)
             try {
-                if (currentGrabbedEl === cupEl) {
-                    grabbed = false;
-                    grabController = null;
-                    currentGrabbedEl = null;
+                var gk = Object.keys(grabs);
+                for (var gi = 0; gi < gk.length; gi++) {
+                    if (grabs[gk[gi]] && grabs[gk[gi]].el === cupEl) {
+                        delete grabs[gk[gi]];
+                        break;
+                    }
                 }
             } catch (e) { }
 
@@ -1694,19 +2203,31 @@ window.addEventListener('load', () => {
                 try { if (cupEl.object3D) { cupEl.object3D.visible = false; } } catch (e2) { }
             }
 
-            // GAME MODE: track multi-coffee delivery
+            // GAME MODE: track multi-item delivery
             if (gameMode && customer === activeCustomer) {
-                coffeesDelivered++;
                 var remaining = coffeesOrdered - coffeesDelivered;
                 if (remaining > 0) {
-                    showARNotification(remaining + ' more coffee' + (remaining > 1 ? 's' : '') + ' to go!', 2000);
-                    customer._orderText.setAttribute('value', remaining + ' more coffee' + (remaining > 1 ? 's' : ''));
-                } else {
+                    // Build remaining order message from _remainingTypes
+                    var remTypes = customer._remainingTypes || [];
+                    var remCoffee = remTypes.filter(function (t) { return t === 'coffee'; }).length;
+                    var remWater = remTypes.filter(function (t) { return t === 'water'; }).length;
+                    var remParts = [];
+                    if (remCoffee > 0) remParts.push(remCoffee + ' Coffee' + (remCoffee > 1 ? 's' : ''));
+                    if (remWater > 0) remParts.push(remWater + ' Water');
+                    var rmsg = remParts.join(' + ') + ' left';
+                    showARNotification(rmsg, 2000);
+                    customer._orderText.setAttribute('value', rmsg);
+                    if (customer._bubbleBg) customer._bubbleBg.setAttribute('width', '' + Math.max(1.0, rmsg.length * 0.1 + 0.4));
+                } else if (remaining === 0) {
                     // All coffees delivered! Show dollar bill
                     customer._delivered = true;
+                    stopPatienceTimer(customer); // Stop patience — order complete
+                    try { var completeSfx = new Audio('sounds/complete.mp3'); completeSfx.volume = 0.7; completeSfx.play(); } catch (e) { }
                     showDollarBill(customer);
                     showARNotification('Collect the bill!', 3000);
-                    customer._orderText.setAttribute('value', 'Thanks! Here is your bill');
+                    var tmsg = 'Here is your bill';
+                    customer._orderText.setAttribute('value', tmsg);
+                    if (customer._bubbleBg) customer._bubbleBg.setAttribute('width', '' + Math.max(1.0, tmsg.length * 0.1 + 0.4));
                 }
                 updateTutorialUI();
                 return;
@@ -1729,21 +2250,37 @@ window.addEventListener('load', () => {
             if (debugEl) debugEl.textContent = 'Coffee delivered!';
         }
 
-        // Show dollar bill near customer
+        // Show dollar bill near customer (always between customer and camera)
         function showDollarBill(customer) {
             try {
                 var dollarCube = document.getElementById('dollar-cube');
                 if (dollarCube) {
                     var cpos = customer.getAttribute('position');
-                    var px = 0, py = 1.2, pz = 0;
-                    if (cpos) {
-                        px = (cpos.x !== undefined) ? cpos.x : 0;
-                        py = ((cpos.y !== undefined) ? cpos.y : 0) + 1.2;
-                        pz = ((cpos.z !== undefined) ? cpos.z : 0) + 0.5;
+                    var px = (cpos && cpos.x !== undefined) ? cpos.x : 0;
+                    var cy = (cpos && cpos.y !== undefined) ? cpos.y : 0;
+                    var pz = (cpos && cpos.z !== undefined) ? cpos.z : 0;
+
+                    // Direction from customer towards camera
+                    var cam = sceneEl.camera;
+                    var dx = 0, dz = 1;
+                    if (cam) {
+                        var camPos = new THREE.Vector3();
+                        cam.getWorldPosition(camPos);
+                        dx = camPos.x - px;
+                        dz = camPos.z - pz;
+                        var len = Math.sqrt(dx * dx + dz * dz);
+                        if (len > 0.01) { dx /= len; dz /= len; }
+                        else { dx = 0; dz = 1; }
                     }
-                    dollarCube.setAttribute('position', px + ' ' + py + ' ' + pz);
+
+                    // Place bill 0.5 units in front of customer (towards player)
+                    var bx = px + dx * 0.5;
+                    var bz = pz + dz * 0.5;
+                    var by = cy + 1.2;
+
+                    dollarCube.setAttribute('position', bx + ' ' + by + ' ' + bz);
                     dollarCube.setAttribute('visible', 'true');
-                    dollarCube._collected = false; // Reset so it can be collected again
+                    dollarCube._collected = false;
                     if (spawnedObjects.indexOf(dollarCube) === -1) spawnedObjects.push(dollarCube);
                 }
             } catch (e) { console.warn('dollar bill err:', e); }
@@ -1860,7 +2397,12 @@ window.addEventListener('load', () => {
                         (obj.dataset && obj.dataset.isCoffee === 'true') ||
                         (obj.id && obj.id.includes('coffee-cup'));
 
-                    if (!isCoffee) continue;
+                    var isWater =
+                        (obj.classList && obj.classList.contains('water-glass')) ||
+                        (obj.dataset && obj.dataset.isWater === 'true') ||
+                        (obj.id && obj.id.includes('glass'));
+
+                    if (!isCoffee && !isWater) continue;
 
                     var cupPos = new THREE.Vector3();
                     obj.object3D.getWorldPosition(cupPos);
