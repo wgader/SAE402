@@ -2,7 +2,7 @@ import 'aframe';
 import 'aframe-extras';
 import 'aframe-physics-system';
 
-// Component: make entity face camera on Y axis only
+// Composant : forcer l'entité à regarder la caméra (axe Y uniquement)
 AFRAME.registerComponent('face-camera', {
     tick: function () {
         var camera = this.el.sceneEl.camera;
@@ -29,7 +29,7 @@ window.addEventListener('load', () => {
         const cubeEl = document.getElementById('cube');
         let cursorEl = document.getElementById('cursor');
 
-        // Hide scene initially
+        // Masquer la scène au démarrage
         if (sceneEl) {
             sceneEl.style.display = 'none';
         }
@@ -40,13 +40,13 @@ window.addEventListener('load', () => {
             return;
         }
 
-        // AUTO-CREATE CURSOR IF MISSING
+        // CRÉATION AUTOMATIQUE DU CURSEUR SI MANQUANT
         if (!cursorEl && sceneEl) {
             console.log('Creating cursor manually...');
             cursorEl = document.createElement('a-ring');
             cursorEl.id = 'cursor';
             cursorEl.setAttribute('color', 'green');
-            cursorEl.setAttribute('radius-inner', '0.05'); // Slightly thicker
+            cursorEl.setAttribute('radius-inner', '0.05'); // Légèrement plus épais
             cursorEl.setAttribute('radius-outer', '0.08');
             cursorEl.setAttribute('rotation', '-90 0 0');
             cursorEl.setAttribute('visible', 'false');
@@ -56,7 +56,7 @@ window.addEventListener('load', () => {
 
         if (debugEl) debugEl.textContent = 'Prêt!';
 
-        // ENSURE CURSOR EXISTS (Robustness Fix)
+        // VÉRIFIER L'EXITENCE DU CURSEUR (Sécurité)
         if (!cursorEl) {
             console.warn('⚠️ Cursor missing in HTML, creating it manually.');
             const c = document.createElement('a-ring');
@@ -64,69 +64,63 @@ window.addEventListener('load', () => {
             c.setAttribute('color', 'green');
             c.setAttribute('radius-inner', '0.02');
             c.setAttribute('radius-outer', '0.04');
-            c.setAttribute('rotation', '-90 0 0'); // Flat on ground
+            c.setAttribute('rotation', '-90 0 0'); // À plat sur le sol
             c.setAttribute('visible', 'false');
             sceneEl.appendChild(c);
-            // Update reference
-            // cursorEl is const, so we can't reassign it easily if it was null. 
-            // We need to handle this.
-            // But standard 'const cursorEl' at top of scope would be null.
+            cursorEl = c;
         }
-        // Actually, since cursorEl is const in line 16, we can't reassign.
-        // We must rely on 'document.getElementById' returning the new one or use a mutable var.
-        // Let's change the variable declaration to let, OR just re-fetch it.
 
         let xrSession = null;
         let xrRefSpace = null;
         let hitTestSource = null;
 
-        // Grab state — per-hand for dual grab
-        var grabs = {}; // key: controller id, value: { controller, el, velocities }
+        // État de saisie — par main pour la saisie double
+        var grabs = {}; // Contrôleur 
         var grabIdCounter = 0;
         const surfaces = [];
         const spawnedObjects = [];
-        // Legacy aliases for code that still reads these
+        // Anciens alias pour garder la compatibilité avec le code existant
         let grabbed = false;
         let grabController = null;
         let currentGrabbedEl = null;
         let velocities = [];
 
-        let menuToggleLock = false; // Prevents flickering when holding button
-        let coffeeMachineLock = false; // Prevents multiple coffee spawns
-        let sinkLock = false; // Prevents multiple glass spawns
-        let coffeeAudio = null; // Audio element for coffee sound
+        let menuToggleLock = false; // Empêche le clignotement lors du maintien du bouton
+        let coffeeMachineLock = false; // Empêche l'apparition de plusieurs cafés
+        let sinkLock = false; // Empêche l'apparition de plusieurs verres
+        let coffeeAudio = null; // Élément audio pour le bruit du café
 
-        // --- TUTORIAL STATE ---
+        // --- ÉTAT DU TUTO ---
         let tutorialStep = 0;
         let tutorialUI = null;
         let tutorialText = null;
         let activeStains = 0;
         var deliveryDebugLock = false;
 
-        // --- GAME MODE STATE ---
+        // --- ÉTAT DU MODE DE JEU ---
         var gameMode = false;
-        var customerQueue = [];  // All customers in the queue
-        var activeCustomer = null;  // Current customer being served
-        var coffeesOrdered = 0;  // How many coffees current customer wants
-        var coffeesDelivered = 0;  // How many delivered so far
-        var billCollected = false;  // Has the bill been collected
-        var totalServed = 0;  // Total customers served
-        var totalEarnings = 0;  // Total money earned
-        const SERVICE_POS = { x: 0, z: -1.5 };  // Where customer stands to be served
-        const QUEUE_SPACING = 1.2;  // Space between customers in queue
-        const QUEUE_START_Z = -4.0;  // Where queue starts (behind service pos)
+        var customerQueue = [];  // Tous les clients dans la file d'attente
+        var activeCustomer = null;  // Client actuellement servi
+        var coffeesOrdered = 0;  // Nombre de cafés commandés par le client
+        var coffeesDelivered = 0;  // Nombre de cafés déjà servis
+        var billCollected = false;  // L'addition a-t-elle été encaissée ?
+        var totalServed = 0;  // Nombre total de clients servis
+        var totalEarnings = 0;  // Argent total gagné
+        const SERVICE_POS = { x: 0, z: -1.5 };  // Emplacement où le client attend d'être servi
+        const QUEUE_SPACING = 1.2;  // Espace entre les clients dans la file
+        const QUEUE_START_Z = -4.0;  // Début de la file d'attente (derrière le comptoir)
 
-        // --- EVENT SCHEDULER STATE ---
-        var gameEventTimer = null;       // Timer for next event
-        var patienceTimers = [];         // Active patience intervals
-        const PATIENCE_DURATION_MIN = 15000;  // 15s min patience
-        const PATIENCE_DURATION_MAX = 25000;  // 25s max patience
+        // --- GESTIONNAIRE D'ÉVÉNEMENTS ---
+        var gameEventTimer = null;       // Chronomètre du prochain événement
+        var patienceTimers = [];         // Intervalles de patience actifs
+        const PATIENCE_DURATION_MIN = 15000;  // 15 sec min de patience
+        const PATIENCE_DURATION_MAX = 25000;  // 25 sec max de patience
         const PATIENCE_PENALTY = 5;           // $5 penalty for angry customer
 
         function updateTutorialUI() {
             if (!tutorialText) return;
 
-            // GAME MODE: show current order
+            // MODE DE JEU : afficher la commande en cours
             if (gameMode) {
                 let msg = 'CAFE OPEN!\n';
                 msg += 'Served: ' + totalServed + ' | $' + totalEarnings + '\n\n';
@@ -150,7 +144,7 @@ window.addEventListener('load', () => {
                 return;
             }
 
-            // TUTORIAL MODE
+            // MODE TUTO
             let msg = "TO DO:\n\n";
 
             if (tutorialStep === 1) msg += "> Buy Broom & Dustpan (Menu Y)\n  Then clean the floor!\n";
@@ -173,7 +167,7 @@ window.addEventListener('load', () => {
 
             tutorialText.setAttribute('value', msg);
 
-            // Tutorial finished -> start game mode
+            // Tuto terminé -> lancement du mode de jeu
             if (tutorialStep === 7) {
                 setTimeout(function () {
                     startGameMode();
@@ -197,7 +191,7 @@ window.addEventListener('load', () => {
             bg.setAttribute('side', 'double');
             panel.appendChild(bg);
 
-            // Border glow
+            // Lueur de la bordure
             const border = document.createElement('a-plane');
             border.setAttribute('width', '0.52');
             border.setAttribute('height', '0.37');
@@ -221,7 +215,7 @@ window.addEventListener('load', () => {
         }
 
         function spawnShovel() {
-            // Get player position from camera
+            // Position
             var cam = document.getElementById('cam');
             var cx = 0, cy = 0, cz = 0;
             if (cam && cam.object3D) {
@@ -232,7 +226,7 @@ window.addEventListener('load', () => {
                 cz = camPos.z;
             }
 
-            // Spawn DustPan in front of player (~1m ahead, at waist height)
+            // Apparition de la pelle devant le joueur (~1m, niveau de la taille)
             var dustpan = document.createElement('a-entity');
             dustpan.setAttribute('gltf-model', 'url(models/DustPan.glb)');
             dustpan.setAttribute('scale', '0.3 0.3 0.3');
@@ -242,7 +236,7 @@ window.addEventListener('load', () => {
             sceneEl.appendChild(dustpan);
             spawnedObjects.push(dustpan);
 
-            // Spawn Trashcan (on floor, slightly right of player)
+            // Apparition de la poubelle (au sol, légèrement à droite)
             var trashcan = document.createElement('a-entity');
             trashcan.setAttribute('gltf-model', 'url(models/TrashcanSmall.glb)');
             trashcan.setAttribute('scale', '0.5 0.5 0.5');
@@ -255,21 +249,21 @@ window.addEventListener('load', () => {
             console.log('DustPan and Trashcan spawned near player');
         }
 
-        // --- COFFEE MACHINE AUDIO SETUP ---
+        // --- CONFIGURATION AUDIO MACHINE À CAFÉ ---
         function initCoffeeAudio() {
             coffeeAudio = new Audio('/sounds/public_assets_café.MP3');
             coffeeAudio.volume = 0.7;
         }
         initCoffeeAudio();
 
-        // --- SPAWN COFFEE CUP FUNCTION ---
+        // Apparition de 
         function spawnCoffeeCup(machineEntity) {
             if (!machineEntity || !machineEntity.object3D) return;
 
             const machinePos = new THREE.Vector3();
             machineEntity.object3D.getWorldPosition(machinePos);
 
-            // Position à droite de la machine (offset de 0.15m sur X)
+            // Position
             const cupPos = {
                 x: machinePos.x + 0.15,
                 y: machinePos.y + 0.05, // Légèrement au dessus du sol
@@ -293,7 +287,7 @@ window.addEventListener('load', () => {
                 const collidedEl = e.detail.body.el;
                 if (!collidedEl) return;
 
-                // Check if we hit a customer
+                // Vérifier 
                 if (collidedEl.classList.contains('customer')) {
                     console.log('☕ CUP HIT CUSTOMER!');
                     if (typeof deliverCoffee === 'function') {
@@ -330,7 +324,7 @@ window.addEventListener('load', () => {
             }, 200);
         }
 
-        // --- SPAWN GLASS FUNCTION ---
+        // Apparition de 
         function spawnGlass(sinkEntity) {
             if (!sinkEntity || !sinkEntity.object3D) return;
 
@@ -340,7 +334,7 @@ window.addEventListener('load', () => {
             // Same approach as spawnCoffeeCup but adjusted for Sink dimensions
             const glassPos = {
                 x: sinkPos.x - 0.2, // Offset to center better if origin is side-based
-                y: sinkPos.y + 0.7, // Higher spawn to come from "above"
+                y: sinkPos.y + 0.7, // Apparition de 
                 z: sinkPos.z
             };
 
@@ -398,7 +392,6 @@ window.addEventListener('load', () => {
         // --- TRASHCAN DELETION SYSTEM ---
         const trashcans = []; // Liste des poubelles dans la scène
         const TRASH_RADIUS = 0.4; // Rayon de détection élargi (0.2 -> 0.4)
-        let giveCoffeeLock = false; // Lock pour donner le café
         var bgMusic = null; // Musique de fond
 
         function removeObjectFromScene(objEl) {
@@ -421,9 +414,9 @@ window.addEventListener('load', () => {
             console.log('🗑️ Objet supprimé par la poubelle!');
             if (debugEl) debugEl.textContent = '🗑️ Objet jeté!';
 
-            // TUTORIAL STEP 2 CHECK: Shovel Removed (Check Step OR Class)
+            // Vérifier 
             if (tutorialStep === 2) {
-                // If it was the shovel (either tutorial one or shop one)
+                // Si c'�tait la pelle (celle du tuto ou celle achet�e)
                 if (objEl.classList.contains('shovel-tool') || objEl.classList.contains('dustpan-tool')) {
                     tutorialStep = 3;
                     updateTutorialUI();
@@ -438,7 +431,7 @@ window.addEventListener('load', () => {
             const trashPos = new THREE.Vector3();
             const objPos = new THREE.Vector3();
 
-            // Pour chaque poubelle
+            // Pour chaque poubelle existante
             trashcans.forEach(trashcan => {
                 if (!trashcan || !trashcan.object3D) return;
                 trashcan.object3D.getWorldPosition(trashPos);
@@ -470,7 +463,7 @@ window.addEventListener('load', () => {
             });
         }
 
-        // --- WELCOME PANEL (Intro Screen) ---
+        // --- PANNEAU DE BIENVENUE (�cran d'intro) ---
         let welcomePanel = null;
 
         function createWelcomePanel() {
@@ -481,28 +474,25 @@ window.addEventListener('load', () => {
             welcomePanel.setAttribute('position', '0 0 -1.2'); // 1.2m devant la caméra
             welcomePanel.setAttribute('rotation', '0 0 0');
 
-            // --- PAPER BACKGROUND ---
+            // --- FOND PAPIER ---
             const paper = document.createElement('a-plane');
             paper.setAttribute('width', '1.02');
             paper.setAttribute('height', '1.24');
             paper.setAttribute('color', '#f5f0e1'); // Couleur papier vieilli
             paper.setAttribute('material', 'shader: flat; side: double');
             paper.setAttribute('position', '0 0 0');
-            // Légère rotation pour effet manuscrit
-            // paper.setAttribute('rotation', '0 0 -2');
             welcomePanel.appendChild(paper);
 
-            // --- PAPER BORDER (Shadow effect) ---
+            // --- BORDURE DU PAPIER (Effet d'ombre) ---
             const shadow = document.createElement('a-plane');
             shadow.setAttribute('width', '1.04');
             shadow.setAttribute('height', '1.26');
             shadow.setAttribute('color', '#8b7355');
             shadow.setAttribute('opacity', '0.3');
             shadow.setAttribute('position', '0.01 -0.01 -0.01');
-            // shadow.setAttribute('rotation', '0 0 -2');
             welcomePanel.appendChild(shadow);
 
-            // --- TITLE ---
+            // --- TITRE ---
             const title = document.createElement('a-text');
             title.setAttribute('value', '~ HOLO BARISTA ~');
             title.setAttribute('align', 'center');
@@ -512,7 +502,7 @@ window.addEventListener('load', () => {
             title.setAttribute('font', 'mozillavr');
             welcomePanel.appendChild(title);
 
-            // --- DECORATIVE LINE ---
+            // --- LIGNE D�CORATIVE ---
             const line = document.createElement('a-plane');
             line.setAttribute('width', '0.5');
             line.setAttribute('height', '0.003');
@@ -520,7 +510,7 @@ window.addEventListener('load', () => {
             line.setAttribute('position', '0 0.16 0.01');
             welcomePanel.appendChild(line);
 
-            // --- INTRO TEXT ---
+            // --- TEXTE D'INTRODUCTION ---
             const introText = document.createElement('a-text');
             introText.setAttribute('value',
                 'Welcome to Holo Barista!\\n\\n' +
@@ -541,7 +531,7 @@ window.addEventListener('load', () => {
             introText.setAttribute('line-height', '55');
             welcomePanel.appendChild(introText);
 
-            // --- CLOSE BUTTON ---
+            // --- BOUTON DE FERMETURE ---
             const closeBtn = document.createElement('a-box');
             closeBtn.setAttribute('width', '0.2');
             closeBtn.setAttribute('height', '0.06');
@@ -551,7 +541,7 @@ window.addEventListener('load', () => {
             closeBtn.setAttribute('class', 'clickable');
             closeBtn.id = 'welcome-close-btn';
 
-            // Button text
+            // Texte du bouton
             const closeTxt = document.createElement('a-text');
             closeTxt.setAttribute('value', 'START');
             closeTxt.setAttribute('align', 'center');
@@ -560,7 +550,7 @@ window.addEventListener('load', () => {
             closeTxt.setAttribute('color', '#f5f0e1');
             closeBtn.appendChild(closeTxt);
 
-            // Hover effect
+            // Effet au survol
             closeBtn.addEventListener('mouseenter', () => {
                 closeBtn.setAttribute('color', '#a0522d');
                 closeBtn.setAttribute('scale', '1.1 1.1 1.1');
@@ -583,56 +573,40 @@ window.addEventListener('load', () => {
                 welcomePanel.parentNode.removeChild(welcomePanel);
                 welcomePanel = null;
                 debugEl.textContent = '🟢 PANEL FERMÉ';
-                // Trigger initial customer spawn -> REMOVED (Handled by Tutorial now)
-                // setTimeout(spawnCustomer, 2000); 
             }
         }
 
-        // ... (lines 346-1188 unchanged usually, but I need to jump to customer section)
-        // I will use multi_replace if I could, but here I am replacing start and end block?
-        // Wait, replace_file_content replaces contiguous block.
-        // I need to replace closeWelcomePanel (lines 307-344) AND customer logic (lines 1191+).
-        // Since they are far apart, I should use multi_replace.
-        // But the prompt below says "Instruction: Remove test code from closeWelcomePanel and update customer logic."
-        // I will use multi_replace_file_content.
-
-        // Wait, I am calling replace_file_content.
-        // I must target contiguous block.
-        // I will do 2 separate calls or use multi_replace.
-        // I'll restart and use multi_replace_file_content.
-
-
-        // --- 3D INVENTORY HUD (Attached to Camera) ---
+        // --- INVENTAIRE 3D (Attach� � la cam�ra) ---
         let inventoryEntity = null;
 
         function createHUDInventory() {
             const menu = document.createElement('a-entity');
             inventoryEntity = menu;
-            menu.setAttribute('visible', 'false'); // HIDDEN BY DEFAULT
+            menu.setAttribute('visible', 'false'); // MASQU� PAR D�FAUT
 
-            // Attach to Camera (HUD)
+            // Attach� � la cam�ra (HUD)
             const cam = document.getElementById('cam');
             if (!cam) return;
 
-            // Position: Adjusted for new scale
+            // Position
             menu.setAttribute('position', '0 -0.2 -0.8');
-            menu.setAttribute('rotation', '-15 0 0'); // Tilted up to face eyes
-            menu.setAttribute('scale', '0.5 0.5 0.5'); // COMPACT SCALE
+            menu.setAttribute('rotation', '-15 0 0'); // Inclin� vers le haut pour faire face aux yeux
+            menu.setAttribute('scale', '0.5 0.5 0.5'); // �CHELLE COMPACTE
 
-            // --- SIMPLE BACKGROUND (Plane) ---
-            // Changed from Box to Plane to avoid Z-fighting/blocking issues
+            // --- FOND SIMPLE (Plan) ---
+            // Remplac� par un plan pour �viter les probl�mes d'affichage (Z-fighting)
             const bg = document.createElement('a-plane');
             bg.setAttribute('width', '1.6');
             bg.setAttribute('height', '1.4');
             bg.setAttribute('color', '#000000');
-            bg.setAttribute('opacity', '0.6'); // More transparent
-            bg.setAttribute('shader', 'flat'); // Simple shader, no lighting issues
-            bg.setAttribute('position', '0 -0.05 -0.01'); // Behind items
+            bg.setAttribute('opacity', '0.6'); // Plus transparent
+            bg.setAttribute('shader', 'flat'); // Shader simple, pas de probl�mes d'�clairage
+            bg.setAttribute('position', '0 -0.05 -0.01'); // Derri�re les objets
             menu.appendChild(bg);
 
-            // Removed "Border" box to simplify view
+            // Suppression de la bordure pour simplifier la vue
 
-            // Title
+            // Titre
             const title = document.createElement('a-text');
             title.setAttribute('value', 'VR STORE');
             title.setAttribute('align', 'center');
@@ -643,7 +617,7 @@ window.addEventListener('load', () => {
             title.setAttribute('letter-spacing', '2');
             menu.appendChild(title);
 
-            // Wallet balance display
+            // Affichage du solde du portefeuille
             const walletText = document.createElement('a-text');
             walletText.setAttribute('value', '$' + totalEarnings);
             walletText.setAttribute('align', 'center');
@@ -654,7 +628,7 @@ window.addEventListener('load', () => {
             walletText.id = 'shop-wallet';
             menu.appendChild(walletText);
 
-            // Decorative Line
+            // Ligne d�corative
             const line = document.createElement('a-plane');
             line.setAttribute('width', '1.0');
             line.setAttribute('height', '0.003');
@@ -666,16 +640,16 @@ window.addEventListener('load', () => {
             // menuScale = taille dans le menu HUD (petit pour l'aperçu)
             // spawnScale = taille réelle dans la scène 3D
             const items = [
-                // Row 1: Essentials (FREE)
+                // Ligne 1 : Les indispensables (GRATUIT)
                 { type: 'gltf', model: 'models/CoffeeMachine.glb', color: '#fab1a0', label: 'COFFEE', menuScale: '0.2 0.2 0.2', spawnScale: '0.4 0.4 0.4', price: 0 },
                 { type: 'gltf', model: 'models/TrashcanSmall.glb', color: '#a29bfe', label: 'TRASH', menuScale: '0.2 0.2 0.2', spawnScale: '0.8 0.8 0.8', price: 0 },
-                // Row 2: Tools + Register (FREE)
+                // Ligne 2 : Outils + Caisse (GRATUIT)
                 { type: 'gltf', label: 'SPEAKER', model: 'models/BassSpeakers.glb', color: '#fff', menuScale: '0.1 0.1 0.1', spawnScale: '0.8 0.8 0.8', price: 20 },
                 { type: 'gltf', label: 'BROOM', model: 'models/Broom.glb', color: '#fff', menuScale: '0.001 0.001 0.001', spawnScale: '0.004 0.004 0.004', price: 0 },
                 { type: 'gltf', label: 'REGISTER', model: 'models/Cashregister.glb', color: '#fff', menuScale: '0.007 0.007 0.007', spawnScale: '0.03 0.03 0.03', price: 0 },
                 { type: 'gltf', label: 'DUSTPAN', model: 'models/DustPan.glb', color: '#fff', menuScale: '0.08 0.08 0.08', spawnScale: '0.25 0.25 0.25', price: 0 },
                 { type: 'gltf', label: 'SINK', model: 'models/Sink.glb', color: '#74b9ff', menuScale: '0.06 0.06 0.06', spawnScale: '0.5 0.5 0.5', price: 0 },
-                // Row 3: Decoration (PAID)
+                // Ligne 3 : D�coration (PAYANT)
                 { type: 'gltf', label: 'SIGN', model: 'models/Coffeesign.glb', color: '#fff', menuScale: '0.04 0.04 0.04', spawnScale: '0.2 0.2 0.2', price: 15 },
                 { type: 'gltf', label: 'COUCH', model: 'models/Couch.glb', color: '#fff', menuScale: '0.08 0.08 0.08', spawnScale: '0.3 0.3 0.3', price: 30 },
                 { type: 'gltf', label: 'PLANT', model: 'models/Houseplant.glb', color: '#fff', menuScale: '0.1 0.1 0.1', spawnScale: '0.4 0.4 0.4', price: 10 },
@@ -694,11 +668,11 @@ window.addEventListener('load', () => {
                 // Row 0: 0.25, Row 1: -0.15, Row 2: -0.55
                 const y = 0.25 - (row * 0.4);
 
-                // CONTAINER
+                // CONTENEUR
                 const btnGroup = document.createElement('a-entity');
                 btnGroup.setAttribute('position', `${x} ${y} 0.05`);
 
-                // CARD BACKGROUND (Clickable)
+                // FOND DE LA CARTE (Cliquable)
                 const btn = document.createElement('a-box');
                 btn.setAttribute('width', '0.28');
                 btn.setAttribute('height', '0.32');
@@ -707,14 +681,14 @@ window.addEventListener('load', () => {
                 btn.setAttribute('opacity', '0.9');
                 btn.setAttribute('class', 'clickable');
 
-                // Spawn Data
+                // Donn�es d'apparition
                 btn.dataset.spawnType = item.type;
                 btn.dataset.spawnColor = item.color;
                 btn.dataset.spawnPrice = item.price.toString();
                 if (item.model) btn.dataset.spawnModel = item.model;
                 if (item.spawnScale) btn.dataset.spawnScale = item.spawnScale;
 
-                // Hover Effects
+                // Effets au survol
                 btn.addEventListener('mouseenter', () => {
                     btn.setAttribute('color', '#636e72');
                     btn.setAttribute('scale', '1.1 1.1 1.1');
@@ -730,8 +704,7 @@ window.addEventListener('load', () => {
 
                 btnGroup.appendChild(btn);
 
-                // 3D ICON (Preview)
-                // 3D ICON (Preview)
+                // IC�NE 3D (Aper�u)
                 let icon;
                 if (item.type === 'gltf') {
                     icon = document.createElement('a-entity');
@@ -748,7 +721,7 @@ window.addEventListener('load', () => {
                 icon.setAttribute('class', 'item-icon');
                 btnGroup.appendChild(icon);
 
-                // LABEL
+                // �TIQUETTE
                 const label = document.createElement('a-text');
                 label.setAttribute('value', item.label);
                 label.setAttribute('align', 'center');
@@ -757,7 +730,7 @@ window.addEventListener('load', () => {
                 label.setAttribute('color', '#dfe6e9');
                 btnGroup.appendChild(label);
 
-                // PRICE TAG
+                // �TIQUETTE DE PRIX
                 const priceTag = document.createElement('a-text');
                 priceTag.setAttribute('value', item.price === 0 ? 'FREE' : '$' + item.price);
                 priceTag.setAttribute('align', 'center');
@@ -785,11 +758,10 @@ window.addEventListener('load', () => {
             }
             lastSpawnTime = now;
 
-            // Get camera position and direction
-            // FORCE RELEASE ANY GRABBED OBJECT (Fix Head Tracking Glitch)
+            // REL�CHER DE FORCE TOUT OBJET SAISI (Correction du bug de suivi de la t�te)
             if (grabbed) release();
 
-            // Get camera position and direction
+            // Position
             const cam = document.getElementById('cam');
             const camPos = new THREE.Vector3();
             const camDir = new THREE.Vector3();
@@ -801,7 +773,7 @@ window.addEventListener('load', () => {
                 return; // Safety
             }
 
-            // Spawn 1.5m in front of camera
+            // Apparition de 
             // getWorldDirection retourne la direction vers laquelle on regarde (axe -Z)
             // On utilise cette direction directement, mais on inverse si nécessaire
             const spawnPos = camPos.clone().add(camDir.multiplyScalar(-1.5)); // Négatif car cam regarde vers -Z
@@ -809,7 +781,7 @@ window.addEventListener('load', () => {
 
             console.log('✨ SPAWNING at:', spawnPos);
 
-            // Create entity based on type
+            // Cr�er l'entit� based on type
             let entity;
             switch (type) {
                 case 'sphere':
@@ -915,7 +887,7 @@ window.addEventListener('load', () => {
 
                     sceneEl.renderer.xr.setSession(xrSession);
 
-                    // Controllers Three.js
+                    // Contrôleur 
                     const ctrl0 = sceneEl.renderer.xr.getController(0);
                     const ctrl1 = sceneEl.renderer.xr.getController(1);
 
@@ -939,7 +911,7 @@ window.addEventListener('load', () => {
                     ctrl1.addEventListener('selectstart', () => grab(ctrl1));
                     ctrl1.addEventListener('selectend', () => release(ctrl1));
 
-                    // CREATE WELCOME PANEL FIRST
+                    // Créer
                     createWelcomePanel();
 
                     // START TUTORIAL
@@ -949,7 +921,7 @@ window.addEventListener('load', () => {
                         // spawnDirtyCup(); // Wait for floor cleaning first
                     }, 500);
 
-                    // CREATE HUD MENU (but hidden)
+                    // Créer
                     createHUDInventory();
 
                     // Lancer musique de fond
@@ -1029,10 +1001,10 @@ window.addEventListener('load', () => {
                 }
             }
 
-            // --- TRASHCAN COLLISION CHECK ---
+            // Vérifier 
             checkTrashcanCollisions();
 
-            // --- COFFEE DELIVERY CHECK ---
+            // Vérifier 
             checkCoffeeDelivery();
 
             // --- MANUEL RAYCASTER & DIAGNOSTICS ---
@@ -1049,15 +1021,15 @@ window.addEventListener('load', () => {
 
                     // --- JOYSTICK ROTATION LOGIC ---
                     // Verify if this source is the one holding the object
-                    // We need to match the source to the controller entity (ctrl0/ctrl1)
+                    // Contrôleur 
                     // Simplified: If ANY joystick is moved and we have a grabbed object, rotate it.
-                    // Ideally check handedness matches grabController.
+                    // Contrôleur 
 
                     if (grabbed && currentGrabbedEl && source.gamepad.axes.length >= 2) {
                         const rotSpeed = 0.05;
 
                         // DUAL JOYSTICK CONTROL
-                        // Left Controller: Yaw (Left/Right)
+                        // Contrôleur 
                         if (source.handedness === 'left') {
                             const axisX = source.gamepad.axes[2] !== undefined ? source.gamepad.axes[2] : source.gamepad.axes[0];
                             if (Math.abs(axisX) > 0.1) {
@@ -1070,7 +1042,7 @@ window.addEventListener('load', () => {
                             }
                         }
 
-                        // Right Controller: Pitch (Up/Down)
+                        // Contrôleur 
                         if (source.handedness === 'right') {
                             const axisY = source.gamepad.axes[3] !== undefined ? source.gamepad.axes[3] : source.gamepad.axes[1];
                             if (Math.abs(axisY) > 0.1) {
@@ -1084,8 +1056,8 @@ window.addEventListener('load', () => {
                         }
                     }
 
-                    // LEFT CONTROLLER - Menu Toggle
-                    // LEFT CONTROLLER - Menu Toggle (Button 4/5 usually X/Y)
+                    // Contrôleur 
+                    // Contrôleur 
                     if (source.handedness === 'left' && source.gamepad) {
                         // Button 5 is usually 'Y' on Quest
                         const yBtn = source.gamepad.buttons[5] || source.gamepad.buttons[4] || source.gamepad.buttons[3];
@@ -1096,7 +1068,7 @@ window.addEventListener('load', () => {
                                 if (inventoryEntity) {
                                     const vis = inventoryEntity.getAttribute('visible');
                                     inventoryEntity.setAttribute('visible', !vis);
-                                    // Update wallet balance when opening shop
+                                    // Mettre à jour 
                                     if (!vis) {
                                         var walletEl = document.getElementById('shop-wallet');
                                         if (walletEl) walletEl.setAttribute('value', '$' + totalEarnings);
@@ -1109,24 +1081,8 @@ window.addEventListener('load', () => {
                         }
                     }
 
-                    // RIGHT CONTROLLER - Debug buttons + Give coffee
-                    if (source.handedness === 'right' && source.gamepad) {
-                        // Debug: afficher tous les boutons pressés
-                        for (let bi = 0; bi < source.gamepad.buttons.length; bi++) {
-                            if (source.gamepad.buttons[bi].pressed) {
-                                debugEl.textContent = `BTN ${bi} | Grab:${grabbed} | Cup:${currentGrabbedEl ? 'yes' : 'no'} | Cust:${customers.length}`;
-                            }
-                        }
 
-                        // Essayer TOUS les boutons possibles pour A (4, 3, ou autre)
-                        const aBtn = source.gamepad.buttons[4] || source.gamepad.buttons[3];
-
-                        if (aBtn && aBtn.pressed && !giveCoffeeLock) {
-                            debugEl.textContent = `A pressed! Grab:${grabbed}`;
-                        }
-                    }
-
-                    // RIGHT CONTROLLER - Button B = Coffee Machine / Sink Interaction
+                    // CONTR�LEUR DROIT - Bouton B = Interaction Machine � caf� / �vier
                     if (source.handedness === 'right' && source.gamepad) {
                         // Button 5 is usually 'B' on Quest, also try button 4 (A)
                         const bBtn = source.gamepad.buttons[5];
@@ -1134,7 +1090,7 @@ window.addEventListener('load', () => {
                         const interactBtn = (bBtn && bBtn.pressed) ? bBtn : ((aBtn2 && aBtn2.pressed) ? aBtn2 : null);
 
                         if (interactBtn && interactBtn.pressed && !coffeeMachineLock && !sinkLock) {
-                            // Raycast from right controller to detect coffee machine or sink
+                            // Contrôleur 
                             const rightCtrl = window.rightController;
                             if (rightCtrl) {
                                 const tempMatrix = new THREE.Matrix4();
@@ -1145,7 +1101,7 @@ window.addEventListener('load', () => {
                                 raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
                                 raycaster.far = 5.0;
 
-                                // Find all coffee machines AND sinks
+                                // Trouver toutes les machines � caf� ET �viers
                                 const interactables = [];
                                 spawnedObjects.forEach(obj => {
                                     if (obj && obj.object3D) {
@@ -1177,7 +1133,7 @@ window.addEventListener('load', () => {
                                         }
                                     }
                                 } else {
-                                    // FALLBACK: proximity check if raycast missed
+                                    // Vérifier 
                                     const ctrlPos = new THREE.Vector3();
                                     rightCtrl.getWorldPosition(ctrlPos);
                                     var closestMachine = null;
@@ -1210,7 +1166,7 @@ window.addEventListener('load', () => {
                         }
                     }
 
-                    // CHECK FOR ANY CLICK (For both hands)
+                    // Vérifier 
                     if (source.gamepad) {
                         // Usually Trigger is button 0
                         if (source.gamepad.buttons[0] && source.gamepad.buttons[0].pressed) {
@@ -1225,7 +1181,7 @@ window.addEventListener('load', () => {
                 }
             }
 
-            // 3. Interaction Logic (Unified for Both Controllers)
+            // Contrôleur 
 
             const handleControllerInteraction = (controller) => {
                 if (!controller) return;
@@ -1236,7 +1192,7 @@ window.addEventListener('load', () => {
                 let line = controller.getObjectByName('laser-line');
                 let cursor = controller.getObjectByName('laser-cursor');
 
-                // Hide laser if neither menu nor welcome panel is visible
+                // Masquer le laser si ni le menu ni l'accueil ne sont visibles
                 if (!isMenuVisible && !isWelcomeVisible) {
                     if (line) line.visible = false;
                     if (cursor) cursor.visible = false;
@@ -1260,7 +1216,7 @@ window.addEventListener('load', () => {
                 }
 
                 line.visible = true;
-                cursor.visible = false; // Hidden unless hit
+                cursor.visible = false; // Masqu� sauf en cas de collision
 
                 // RAYCAST
                 const tempMatrix = new THREE.Matrix4();
@@ -1273,7 +1229,7 @@ window.addEventListener('load', () => {
 
                 const buttons = [];
 
-                // Search in inventory menu
+                // Chercher dans le menu de l'inventaire
                 const isShopOpen = inventoryEntity && inventoryEntity.getAttribute('visible') !== 'false';
                 if (inventoryEntity && inventoryEntity.object3D && isShopOpen) {
                     inventoryEntity.object3D.traverse(child => {
@@ -1283,7 +1239,7 @@ window.addEventListener('load', () => {
                     });
                 }
 
-                // Search in welcome panel
+                // Chercher dans le panneau de bienvenue
                 if (welcomePanel && welcomePanel.object3D) {
                     welcomePanel.object3D.traverse(child => {
                         if (child.el && child.el.classList.contains('clickable') && child.isMesh) {
@@ -1294,19 +1250,12 @@ window.addEventListener('load', () => {
 
                 const intersects = raycaster.intersectObjects(buttons);
 
-                // Clear Hovers (Global clear might flicker if both point, but acceptable for now)
-                // Better: clear hover only if NOT hovered by other controller? 
-                // Simple version: clear always, re-apply if intersection.
-
-                // Note: Clearing globally in a loop inside a per-controller function is slightly buggy if both controllers point.
-                // But typically only one points at a time.
-
                 if (intersects.length > 0) {
                     const hit = intersects[0];
                     const el = hit.object.el;
                     const dist = hit.distance;
 
-                    // Update Laser
+                    // Mettre � jour le laser
                     const points = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -dist)];
                     line.geometry.setFromPoints(points);
                     line.geometry.attributes.position.needsUpdate = true;
@@ -1318,43 +1267,37 @@ window.addEventListener('load', () => {
                     el.setAttribute('scale', '1.1 1.1 1.1');
                     el.setAttribute('color', '#636e72');
 
-                    // CLICK?
-                    // We check if THIS controller's trigger is pressed. 
-                    // However, we only have global 'isAnyBtnPressed' from the loop above.
-                    // Ideally we check specific controller state here.
-                    // But for now, using global isAnyBtnPressed is acceptable as requested "cliquer".
-
                     if (window.isAnyBtnPressed && !window.uiClickLock) {
                         window.uiClickLock = true;
 
-                        // Check if it's the welcome panel close button
+                        // V�rifier si c'est le bouton de fermeture du panneau de bienvenue
                         if (el.id === 'welcome-close-btn') {
                             console.log('📜 Closing Welcome Panel');
                             closeWelcomePanel();
                         }
-                        // Otherwise it's a spawn button
+                        // Sinon c'est un bouton d'apparition
                         else if (el.dataset.spawnType) {
                             var price = parseInt(el.dataset.spawnPrice) || 0;
 
-                            // CHECK FUNDS
+                            // V�RIFIER LES FONDS
                             if (price > 0 && totalEarnings < price) {
                                 showARNotification('Not enough money! Need $' + price + ' (Have $' + totalEarnings + ')', 2500);
-                                el.setAttribute('color', '#d63031'); // Red flash
+                                el.setAttribute('color', '#d63031'); // Clignotement rouge
                                 setTimeout(function () { el.setAttribute('color', '#2d3436'); }, 500);
                             } else {
-                                // DEDUCT MONEY
+                                // D�DUIRE L'ARGENT
                                 if (price > 0) {
                                     totalEarnings -= price;
                                     showARNotification('-$' + price + ' | Wallet: $' + totalEarnings, 2000);
                                 }
-                                // Update wallet display in shop
+                                // Mettre � jour l'affichage du portefeuille dans la boutique
                                 var walletEl = document.getElementById('shop-wallet');
                                 if (walletEl) walletEl.setAttribute('value', '$' + totalEarnings);
                                 updateTutorialUI();
 
                                 el.setAttribute('color', '#00cec9');
 
-                                // FORCE RELEASE to prevent "Head Tracking" glitch
+                                // Forcer le rel�chement pour �viter le bug de suivi de la t�te
                                 if (window.grabbed) {
                                     release();
                                 }
@@ -1365,18 +1308,18 @@ window.addEventListener('load', () => {
                     }
 
                 } else {
-                    // Reset Laser
+                    // R�initialiser le laser
                     const points = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -2)];
                     line.geometry.setFromPoints(points);
                     line.geometry.attributes.position.needsUpdate = true;
                 }
             };
 
-            // Execute for both
+            // Ex�cuter pour les deux
             handleControllerInteraction(window.rightController);
             handleControllerInteraction(window.leftController);
 
-            // All grabbed objects follow their controllers
+            // Tous les objets saisis suivent leurs contr�leurs
             var grabKeys = Object.keys(grabs);
             for (var gi = 0; gi < grabKeys.length; gi++) {
                 var g = grabs[grabKeys[gi]];
@@ -1388,7 +1331,7 @@ window.addEventListener('load', () => {
                     if (isFinite(pos.x) && isFinite(pos.y) && isFinite(pos.z)) {
                         g.el.object3D.position.set(pos.x, pos.y, pos.z);
 
-                        // SPECIAL CASE: BROOM OFFSET
+                        // CAS SP�CIAL: D�CALAGE DU BALAI
                         const model = g.el.getAttribute('gltf-model');
                         if (model && model.includes('Broom')) {
                             g.el.object3D.translateY(-0.6);
@@ -1404,7 +1347,7 @@ window.addEventListener('load', () => {
                     }
                 } catch (e) { }
             }
-            // Update legacy aliases for compatibility
+            // Mise � jour des anciens alias pour la compatibilit�
             var firstKey = grabKeys.length > 0 ? grabKeys[0] : null;
             if (firstKey && grabs[firstKey]) {
                 grabbed = true;
@@ -1417,19 +1360,14 @@ window.addEventListener('load', () => {
             }
         }
 
-        // Removed release/grab duplicated definitions if any, used the ones already defined above if valid scopes?
-        // Wait, 'grab' and 'release' were defined outside loop in previous version?
-        // Let's ensure they are available. In the original file they were inside window.load but outside loop.
-        // I am replacing from line 41 to 609, so I am including them.
-
         function grab(controller) {
-            // Check if this controller already grabs something
+            // V�rifier si ce contr�leur saisit d�j� quelque chose
             var ctrlId = controller.uuid || controller.id || ('ctrl' + (grabIdCounter++));
             if (!controller._grabId) controller._grabId = ctrlId;
             ctrlId = controller._grabId;
             if (grabs[ctrlId]) return; // Already grabbing
 
-            // Get controller position
+            // Contrôleur 
             const ctrlPos = new THREE.Vector3();
             controller.getWorldPosition(ctrlPos);
 
@@ -1534,7 +1472,7 @@ window.addEventListener('load', () => {
         const stains = [];
 
         function spawnRandomStain() {
-            // Random position around user (assuming floor is roughly y=0)
+            // Position
             // Range: -2m to 2m X/Z
             const x = (Math.random() - 0.5) * 4;
             const z = (Math.random() - 0.5) * 4 - 1.5; // Offset forward slightly
@@ -1556,7 +1494,7 @@ window.addEventListener('load', () => {
             console.log('Dirt spot spawned at', x, z);
         }
 
-        // Spawn initial stains (FIXED COUNT: 4)
+        // Apparition de 
         setTimeout(() => {
             for (let i = 0; i < 4; i++) spawnRandomStain();
         }, 2000);
@@ -1567,13 +1505,13 @@ window.addEventListener('load', () => {
             const model = currentGrabbedEl.getAttribute('gltf-model');
             if (!model || !model.includes('Broom')) return;
 
-            // Calculate Broom Tip Position
-            // Origin of broom is likely bottom, but we offset the GRAB position.
-            // We need the WORLD position of the bottom of the broom.
+            // Position
+            // Position
+            // Position
             // Since we grab it by the handle (offset -0.6), the "bottom" is closer to the true origin of the mesh.
             // But we need the actual world coordinates of the mesh origin (which is the bottom usually).
 
-            // Calculate Broom Tip Position
+            // Position
             const broomPos = new THREE.Vector3();
             currentGrabbedEl.object3D.getWorldPosition(broomPos);
 
@@ -1607,7 +1545,7 @@ window.addEventListener('load', () => {
                 }
             }
 
-            // CHECK TUTORIAL PROGRESS (Outside loop)
+            // Vérifier 
             // Use stains.length directly for robustness
             if (tutorialStep === 1 && stains.length === 0) {
                 tutorialStep = 2;
@@ -1662,7 +1600,7 @@ window.addEventListener('load', () => {
         // --- CUSTOMER SYSTEM ---
         const customers = [];
 
-        // Get queue position based on camera direction
+        // Position
         // Queue extends AWAY from camera through SERVICE_POS
         function getQueuePosition(queueIndex) {
             var cam = sceneEl.camera;
@@ -1673,14 +1611,14 @@ window.addEventListener('load', () => {
                 cx = camPos.x;
                 cz = camPos.z;
             }
-            // Direction from camera to service position
+            // Position
             var dx = SERVICE_POS.x - cx;
             var dz = SERVICE_POS.z - cz;
             var len = Math.sqrt(dx * dx + dz * dz);
             if (len < 0.01) { dx = 0; dz = -1; len = 1; } // fallback
             dx /= len;
             dz /= len;
-            // Service position = index 0, queue extends further along this direction
+            // Position
             var dist = QUEUE_SPACING * (queueIndex + 1);
             return {
                 x: SERVICE_POS.x + dx * dist,
@@ -1688,7 +1626,7 @@ window.addEventListener('load', () => {
             };
         }
 
-        // Create a single customer entity
+        // Créer
         function createCustomer(queueIndex) {
             // All Poly Pizza character models (same scale/animations)
             var customerModels = [
@@ -1823,7 +1761,7 @@ window.addEventListener('load', () => {
             return customer;
         }
 
-        // Tutorial mode: spawn single customer
+        // Apparition de 
         function spawnCustomer() {
             if (tutorialStep !== 5) return;
             if (customers.length > 0) return;
@@ -1890,7 +1828,7 @@ window.addEventListener('load', () => {
             }
         }
 
-        // Spawn customers one by one with delays
+        // Faire appara�tre un clients one by one with delays
         function spawnCustomersGradually(remaining, index) {
             if (!gameMode || remaining <= 0) {
                 scheduleNextEvent(); // Schedule next event after all spawned
@@ -1909,7 +1847,7 @@ window.addEventListener('load', () => {
             if (!activeCustomer) {
                 advanceQueue();
             } else {
-                // Walk new customer to their queue position
+                // Position
                 var qPos = getQueuePosition(queuePos - 1);
                 var dest = qPos.x + ' 0 ' + qPos.z;
                 walkCustomerTo(c, dest, 2500, null);
@@ -1917,7 +1855,7 @@ window.addEventListener('load', () => {
 
             if (debugEl) debugEl.textContent = 'Queue: ' + customerQueue.length + ' customers';
 
-            // Spawn next customer after 3-5s delay
+            // Apparition de 
             if (remaining > 1) {
                 var nextDelay = 3000 + Math.random() * 2000;
                 setTimeout(function () {
@@ -1938,7 +1876,7 @@ window.addEventListener('load', () => {
             if (customer._patienceBar) customer._patienceBar.setAttribute('visible', 'true');
             if (customer._patienceBg) customer._patienceBg.setAttribute('visible', 'true');
 
-            var tickRate = 200; // Update every 200ms
+            var tickRate = 200; // Mettre à jour 
             var decrementPerTick = (100 / (customer._maxPatienceDuration / tickRate));
 
             customer._patienceTimer = setInterval(function () {
@@ -1949,7 +1887,7 @@ window.addEventListener('load', () => {
                 customer._patience -= decrementPerTick;
                 if (customer._patience < 0) customer._patience = 0;
 
-                // Update bar width and color
+                // Mettre à jour 
                 var pct = customer._patience / 100;
                 var barWidth = pct * 1.0;
                 if (customer._patienceBar) {
@@ -1989,7 +1927,7 @@ window.addEventListener('load', () => {
             totalEarnings = Math.max(0, totalEarnings - PATIENCE_PENALTY);
             showARNotification('Customer left angry! -$' + PATIENCE_PENALTY, 3000);
 
-            // Update bubble text angrily
+            // Mettre à jour 
             if (customer._orderText) customer._orderText.setAttribute('value', 'Too slow!');
             if (customer._bubbleBg) customer._bubbleBg.setAttribute('color', '#FF4444');
 
@@ -2044,12 +1982,12 @@ window.addEventListener('load', () => {
             });
         }
 
-        // Helper: walk a customer to a target position with Walk animation
+        // Position
         function walkCustomerTo(customer, targetPos, duration, onDone) {
             // Switch to Walk animation
             customer.setAttribute('animation-mixer', 'clip: *Walk; loop: repeat');
 
-            // Move position
+            // Position
             customer.setAttribute('animation', {
                 property: 'position',
                 to: targetPos,
@@ -2066,7 +2004,7 @@ window.addEventListener('load', () => {
             }, duration + 100);
         }
 
-        // Move the first customer in queue to service position
+        // Position
         function advanceQueue() {
             try {
                 if (customerQueue.length === 0) {
@@ -2075,7 +2013,7 @@ window.addEventListener('load', () => {
                     coffeesDelivered = 0;
                     billCollected = false;
                     updateTutorialUI();
-                    // No more customers — events will spawn more naturally
+                    // Apparition de 
                     return;
                 }
 
@@ -2085,13 +2023,13 @@ window.addEventListener('load', () => {
                 billCollected = false;
                 activeCustomer._delivered = false;
 
-                // Walk active customer to service position
+                // Position
                 var posY = activeCustomer._posY || 0;
                 var targetPos = SERVICE_POS.x + ' ' + posY + ' ' + SERVICE_POS.z;
                 var ac = activeCustomer;
                 walkCustomerTo(ac, targetPos, 2500, function () {
                     if (ac && ac._circle) ac._circle.setAttribute('visible', 'true');
-                    // Start patience timer when customer arrives at service position
+                    // Position
                     startPatienceTimer(ac);
                 });
 
@@ -2233,7 +2171,7 @@ window.addEventListener('load', () => {
                 return;
             }
 
-            // TUTORIAL MODE: single coffee
+            // MODE TUTO: single coffee
             if (!gameMode) {
                 customer._delivered = true;
                 try {
@@ -2342,7 +2280,7 @@ window.addEventListener('load', () => {
                             return;
                         }
 
-                        // TUTORIAL MODE
+                        // MODE TUTO
                         if (tutorialStep === 6) {
                             tutorialStep = 7;
                             updateTutorialUI();
@@ -2367,12 +2305,12 @@ window.addEventListener('load', () => {
         }, 50);
 
         function checkCoffeeDelivery() {
-            // In game mode, only check activeCustomer
+            // Vérifier 
             var checkTargets = [];
             if (gameMode) {
                 if (activeCustomer && !activeCustomer._delivered) checkTargets.push(activeCustomer);
             } else {
-                // Tutorial mode: check customers array
+                // Vérifier 
                 for (var ci = 0; ci < customers.length; ci++) {
                     if (!customers[ci]._delivered) checkTargets.push(customers[ci]);
                 }
