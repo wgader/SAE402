@@ -16,7 +16,6 @@ AFRAME.registerComponent('face-camera', {
     }
 });
 
-console.log('☕ SAE 402 - Chargement...');
 
 window.addEventListener('load', () => {
     setTimeout(() => {
@@ -35,14 +34,12 @@ window.addEventListener('load', () => {
         }
 
         if (!sceneEl) {
-            if (debugEl) debugEl.textContent = 'Scène manquante!';
             console.error('Scène manquante!');
             return;
         }
 
         // CRÉATION AUTOMATIQUE DU CURSEUR SI MANQUANT
         if (!cursorEl && sceneEl) {
-            console.log('Creating cursor manually...');
             cursorEl = document.createElement('a-ring');
             cursorEl.id = 'cursor';
             cursorEl.setAttribute('color', 'green');
@@ -54,7 +51,6 @@ window.addEventListener('load', () => {
             sceneEl.appendChild(cursorEl);
         }
 
-        if (debugEl) debugEl.textContent = 'Prêt!';
 
         // VÉRIFIER L'EXITENCE DU CURSEUR (Sécurité)
         if (!cursorEl) {
@@ -70,9 +66,6 @@ window.addEventListener('load', () => {
             cursorEl = c;
         }
 
-        let xrSession = null;
-        let xrRefSpace = null;
-        let hitTestSource = null;
 
         // État de saisie — par main pour la saisie double
         var grabs = {}; // Contrôleur 
@@ -246,7 +239,6 @@ window.addEventListener('load', () => {
             sceneEl.appendChild(trashcan);
             trashcans.push(trashcan);
 
-            console.log('DustPan and Trashcan spawned near player');
         }
 
         // --- CONFIGURATION AUDIO MACHINE À CAFÉ ---
@@ -289,7 +281,6 @@ window.addEventListener('load', () => {
 
                 // Vérifier 
                 if (collidedEl.classList.contains('customer')) {
-                    console.log('☕ CUP HIT CUSTOMER!');
                     if (typeof deliverCoffee === 'function') {
                         deliverCoffee(collidedEl, cup);
                     }
@@ -299,8 +290,6 @@ window.addEventListener('load', () => {
             sceneEl.appendChild(cup);
             spawnedObjects.push(cup);
 
-            console.log('☕ Tasse de café créée à:', cupPos);
-            if (debugEl) debugEl.textContent = '☕ Café prêt!';
         }
 
         // --- COFFEE MACHINE INTERACTION ---
@@ -308,8 +297,6 @@ window.addEventListener('load', () => {
             if (coffeeMachineLock) return; // Déjà en cours
             coffeeMachineLock = true;
 
-            console.log('☕ Machine à café activée!');
-            if (debugEl) debugEl.textContent = '☕ Préparation du café...';
 
             // Jouer le son
             if (coffeeAudio) {
@@ -361,7 +348,6 @@ window.addEventListener('load', () => {
                 const collidedEl = e.detail.body.el;
                 if (!collidedEl) return;
                 if (collidedEl.classList.contains('customer')) {
-                    console.log('🥤 WATER HIT CUSTOMER!');
                     if (typeof deliverCoffee === 'function') {
                         deliverCoffee(collidedEl, glass);
                     }
@@ -371,8 +357,6 @@ window.addEventListener('load', () => {
             sceneEl.appendChild(glass);
             spawnedObjects.push(glass);
 
-            console.log('🥤 Water glass spawned at:', glassPos);
-            if (debugEl) debugEl.textContent = '🥤 Water ready!';
         }
 
         // --- SINK INTERACTION ---
@@ -380,8 +364,6 @@ window.addEventListener('load', () => {
             if (sinkLock) return;
             sinkLock = true;
 
-            console.log('🥤 Sink activated!');
-            if (debugEl) debugEl.textContent = '🥤 Filling glass...';
 
             setTimeout(() => {
                 spawnGlass(sinkEntity);
@@ -411,8 +393,6 @@ window.addEventListener('load', () => {
             // Remove from scene
             objEl.parentNode.removeChild(objEl);
 
-            console.log('🗑️ Objet supprimé par la poubelle!');
-            if (debugEl) debugEl.textContent = '🗑️ Objet jeté!';
 
             // Vérifier 
             if (tutorialStep === 2) {
@@ -563,7 +543,6 @@ window.addEventListener('load', () => {
             welcomePanel.appendChild(closeBtn);
 
             cam.appendChild(welcomePanel);
-            console.log('📜 Welcome Panel Created');
 
             return welcomePanel;
         }
@@ -572,7 +551,6 @@ window.addEventListener('load', () => {
             if (welcomePanel && welcomePanel.parentNode) {
                 welcomePanel.parentNode.removeChild(welcomePanel);
                 welcomePanel = null;
-                debugEl.textContent = '🟢 PANEL FERMÉ';
             }
         }
 
@@ -744,7 +722,6 @@ window.addEventListener('load', () => {
             });
 
             cam.appendChild(menu);
-            console.log('🛍️ HUD Upgrade Complete: Custom Models');
             return menu;
         }
 
@@ -779,7 +756,6 @@ window.addEventListener('load', () => {
             const spawnPos = camPos.clone().add(camDir.multiplyScalar(-1.5)); // Négatif car cam regarde vers -Z
             spawnPos.y = Math.max(spawnPos.y, 0.1); // Au moins 10cm du sol
 
-            console.log('✨ SPAWNING at:', spawnPos);
 
             // Cr�er l'entit� based on type
             let entity;
@@ -846,13 +822,10 @@ window.addEventListener('load', () => {
             spawnedObjects.push(entity);
 
             const debugEl = document.getElementById('debug');
-            if (debugEl) debugEl.textContent = `Spawné: ${type}`;
-            console.log(`📦 Spawned ${type} at`, spawnPos);
         }
 
         // --- START BUTTON HANDLER (Landing Page → Loader → AR) ---
         startBtn.onclick = async () => {
-            console.log('☕ Start button clicked!');
 
             // 1. Hide landing page
             if (landingPage) {
@@ -876,7 +849,6 @@ window.addEventListener('load', () => {
                     sceneEl.style.display = 'block';
                 }
 
-                if (debugEl) debugEl.textContent = 'Démarrage AR...';
 
                 try {
                     xrSession = await navigator.xr.requestSession('immersive-ar', {
@@ -932,7 +904,6 @@ window.addEventListener('load', () => {
                         bgMusic.play().catch(function (e) { console.warn('BG music autoplay blocked:', e); });
                     } catch (e) { console.warn('BG music error:', e); }
 
-                    if (debugEl) debugEl.textContent = 'AR OK! Read the instructions';
 
                     // Setup hit-test après délai
                     setTimeout(async () => {
@@ -940,9 +911,7 @@ window.addEventListener('load', () => {
                             xrRefSpace = sceneEl.renderer.xr.getReferenceSpace();
                             const viewer = await xrSession.requestReferenceSpace('viewer');
                             hitTestSource = await xrSession.requestHitTestSource({ space: viewer });
-                            if (debugEl) debugEl.textContent = 'Hit-test OK!';
                         } catch (e) {
-                            if (debugEl) debugEl.textContent = 'Pas de hit-test';
                         }
 
                         // Démarrer boucle XR
@@ -950,7 +919,6 @@ window.addEventListener('load', () => {
                     }, 500);
 
                 } catch (e) {
-                    if (debugEl) debugEl.textContent = 'Erreur: ' + e.message;
                     console.error('Erreur AR:', e.message);
                     // Show scene anyway on error
                     if (sceneEl) sceneEl.style.display = 'block';
@@ -1073,7 +1041,6 @@ window.addEventListener('load', () => {
                                         var walletEl = document.getElementById('shop-wallet');
                                         if (walletEl) walletEl.setAttribute('value', '$' + totalEarnings);
                                     }
-                                    console.log('Toggle Menu:', !vis);
                                 }
                             }
                         } else {
@@ -1117,7 +1084,6 @@ window.addEventListener('load', () => {
                                     }
                                 });
 
-                                console.log('🔍 B pressed: interactables found:', interactables.length);
 
                                 const intersects = raycaster.intersectObjects(interactables);
 
@@ -1125,7 +1091,6 @@ window.addEventListener('load', () => {
                                     const hitEntity = intersects[0].object.el;
                                     if (hitEntity) {
                                         const hitModel = hitEntity.getAttribute('gltf-model');
-                                        console.log('🎯 Hit:', hitModel);
                                         if (hitModel && hitModel.includes('Sink')) {
                                             handleSinkClick(hitEntity);
                                         } else {
@@ -1154,7 +1119,6 @@ window.addEventListener('load', () => {
                                     });
                                     if (closestMachine) {
                                         const hitModel = closestMachine.getAttribute('gltf-model');
-                                        console.log('📍 Proximity hit:', hitModel, 'dist:', closestDist.toFixed(2));
                                         if (hitModel && hitModel.includes('Sink')) {
                                             handleSinkClick(closestMachine);
                                         } else {
@@ -1272,7 +1236,6 @@ window.addEventListener('load', () => {
 
                         // V�rifier si c'est le bouton de fermeture du panneau de bienvenue
                         if (el.id === 'welcome-close-btn') {
-                            console.log('📜 Closing Welcome Panel');
                             closeWelcomePanel();
                         }
                         // Sinon c'est un bouton d'apparition
@@ -1331,7 +1294,7 @@ window.addEventListener('load', () => {
                     if (isFinite(pos.x) && isFinite(pos.y) && isFinite(pos.z)) {
                         g.el.object3D.position.set(pos.x, pos.y, pos.z);
 
-                        // CAS SP�CIAL: D�CALAGE DU BALAI
+                        // CAS SP�CIAL: D�CALAGE DU BALAI
                         const model = g.el.getAttribute('gltf-model');
                         if (model && model.includes('Broom')) {
                             g.el.object3D.translateY(-0.6);
@@ -1396,7 +1359,6 @@ window.addEventListener('load', () => {
 
             if (!closestEl) return;
 
-            if (debugEl) debugEl.textContent = 'GRAB!';
 
             closestEl._originalColor = closestEl.getAttribute('color');
             closestEl.setAttribute('color', '#FFD700');
@@ -1444,7 +1406,6 @@ window.addEventListener('load', () => {
             }
 
             delete grabs[ctrlId];
-            if (debugEl) debugEl.textContent = 'Lâché!';
         }
 
 
@@ -1491,7 +1452,6 @@ window.addEventListener('load', () => {
             stains.push({ el: stain, health: 100 });
             activeStains++; // Increment count
 
-            console.log('Dirt spot spawned at', x, z);
         }
 
         // Apparition de 
@@ -1539,7 +1499,6 @@ window.addEventListener('load', () => {
                         // Remove from Array
                         stains.splice(i, 1);
 
-                        if (debugEl) debugEl.textContent = 'Tache nettoyée !';
                         try { var broomCleanSfx = new Audio('sounds/broom.mp3'); broomCleanSfx.volume = 0.6; broomCleanSfx.play(); } catch (e) { }
                     }
                 }
@@ -1782,12 +1741,10 @@ window.addEventListener('load', () => {
             gameModeStarted = true;
             try {
                 gameMode = true;
-                if (debugEl) debugEl.textContent = 'GAME MODE STARTING...';
                 showARNotification('Cafe is OPEN! Serve customers!', 4000);
                 if (tutorialUI) tutorialUI.setAttribute('visible', 'true');
                 scheduleNextEvent(3000); // First event after 3s
             } catch (e) {
-                if (debugEl) debugEl.textContent = 'GAME START ERR: ' + e.message;
                 console.error('startGameMode error:', e);
             }
         }
@@ -1853,7 +1810,6 @@ window.addEventListener('load', () => {
                 walkCustomerTo(c, dest, 2500, null);
             }
 
-            if (debugEl) debugEl.textContent = 'Queue: ' + customerQueue.length + ' customers';
 
             // Apparition de 
             if (remaining > 1) {
@@ -2044,7 +2000,6 @@ window.addEventListener('load', () => {
                 showARNotification('Customer: ' + coffeesOrdered + ' coffee' + (coffeesOrdered > 1 ? 's' : '') + '!', 3000);
                 updateTutorialUI();
             } catch (e) {
-                if (debugEl) debugEl.textContent = 'ADVANCE ERR: ' + e.message;
                 console.error('advanceQueue error:', e);
             }
         }
@@ -2185,7 +2140,6 @@ window.addEventListener('load', () => {
             }
 
             try { updateTutorialUI(); } catch (e) { }
-            if (debugEl) debugEl.textContent = 'Coffee delivered!';
         }
 
         // Show dollar bill near customer (always between customer and camera)
@@ -2361,7 +2315,6 @@ window.addEventListener('load', () => {
                 }
 
                 if (debugEl && closestDist < 10 && !deliveryDebugLock) {
-                    debugEl.textContent = 'Dist: ' + closestDist.toFixed(2) + 'm (Need < 0.6)';
                     if (closestDist < 0.6) debugEl.style.color = 'lime';
                     else debugEl.style.color = 'yellow';
                 }
